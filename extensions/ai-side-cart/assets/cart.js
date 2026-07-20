@@ -19,6 +19,10 @@
   // ours can't leak out. The stylesheet is injected INTO the shadow via <link> (an
   // external <link> in the page's light DOM would not cross the shadow boundary).
   const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
+  // keep the host non-empty in the LIGHT DOM: all real content lives in the shadow, which
+  // leaves #sc-root matching `div:empty{display:none}` rules some themes ship (Dawn). This
+  // unslotted, unrendered sentinel makes :empty never match (belt-and-suspenders with :host).
+  if (!host.firstChild) host.appendChild(document.createElement("span"));
   function $(id) { return shadow.getElementById(id); }   // every widget query is shadow-scoped
 
   let cart = null;

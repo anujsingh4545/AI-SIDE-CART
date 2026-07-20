@@ -1,6 +1,9 @@
 /* Side Cart — stylesheet injected INTO the widget's shadow root. Scoped to the shadow;
    :host is the light-DOM #sc-root element. No merchant colors here; everything reads --sc-* */
 :host {
+  /* the host has no light-DOM children (all content is in the shadow), so themes that
+     ship `div:empty{display:none}` (e.g. Dawn's base.css) would hide the whole widget */
+  display: block !important;
   --sc-bg: #fff; --sc-text: #111; --sc-accent: #6d28d9; --sc-accent-text: #fff;
   --sc-radius: 12px; --sc-img: 88px; --sc-gap: 12px; --sc-border: #e6e6e6;
   --sc-line: #eee; --sc-muted: #8a8a8a;
