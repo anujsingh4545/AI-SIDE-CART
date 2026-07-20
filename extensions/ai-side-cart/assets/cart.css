@@ -37,7 +37,6 @@
 .sc-topbar .sc-title { font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
 .sc-topbar .sc-count { font-weight: 700; }
 .sc-close { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--sc-text); padding: 4px; border-radius: 8px; }
-.sc-close:hover { background: rgba(0,0,0,.05); }
 
 /* TIMER — full-width tinted band */
 .sc-blk-TIMER { padding: 0; }
@@ -50,7 +49,7 @@
 /* track holds the animated fill + ring markers sitting ON the bar at each threshold */
 .sc-track { position: relative; height: 6px; border-radius: 25px; background: #e6e6ea; }
 .sc-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 25px; background: var(--sc-accent); transition: width .45s cubic-bezier(.4,0,.2,1); }
-.sc-milestone { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #cfcfd6; box-shadow: 0 0 0 3px #fff; z-index: 1; }
+.sc-milestone { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #cfcfd6; box-shadow: 0 0 0 3px #fff; z-index: 1; }
 .sc-milestone.sc-done { border-color: var(--sc-accent); background: var(--sc-accent); }
 /* labels are absolutely positioned under their markers */
 .sc-ms-labels { position: relative; height: 13px; margin-top: 12px; }

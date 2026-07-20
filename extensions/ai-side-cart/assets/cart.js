@@ -737,6 +737,16 @@
     return block.props.unlockedBy === "QUANTITY" ? cart.item_count : cart.total_price;
   }
 
+  // rule.unlockAt is authored in the MAJOR currency unit (dollars/rupees), while the cart
+  // total is in cents — scale money thresholds to cents so they compare/position correctly.
+  // For QUANTITY goals unlockAt is a raw item count (no scaling). Everything downstream
+  // (fill %, marker positions, crossings, needed-amount) derives from this one function.
+  function ruleThreshold(rule) {
+    const block = progressBlock();
+    const value = Number(rule.unlockAt) || 0;
+    return block && block.props.unlockedBy === "QUANTITY" ? value : value * 100;
+  }
+
   function formatProgressAmount(amount) {
     const block = progressBlock();
     return block && block.props.unlockedBy === "QUANTITY" ? String(amount) : money(amount);
@@ -746,9 +756,9 @@
     const rules = sortedProgressRules();
     if (!rules.length) return {};
     const total = progressTotal();
-    const nextRule = rules.find(function (rule) { return total < rule.unlockAt; });
+    const nextRule = rules.find(function (rule) { return total < ruleThreshold(rule); });
     return {
-      needed: nextRule ? formatProgressAmount(nextRule.unlockAt - total) : "",
+      needed: nextRule ? formatProgressAmount(ruleThreshold(nextRule) - total) : "",
       next: nextRule ? nextRule.label : "",
       unlocked: justUnlockedFlash ? justUnlockedFlash.label : "",
     };
@@ -760,7 +770,8 @@
     if (!rules.length) return;
     const total = progressTotal();
     const crossedRule = rules.find(function (rule) {
-      return previousProgressTotal < rule.unlockAt && total >= rule.unlockAt;
+      const threshold = ruleThreshold(rule);
+      return previousProgressTotal < threshold && total >= threshold;
     });
     previousProgressTotal = total;
     if (crossedRule) {
@@ -774,31 +785,31 @@
     if (!rules.length || !cart) return "";
     const blockProps = block.props;
     const total = progressTotal();
-    const maxUnlockAt = rules[rules.length - 1].unlockAt;
-    const fillPercent = Math.min(100, (total / maxUnlockAt) * 100);
-    const nextRule = rules.find(function (rule) { return total < rule.unlockAt; });
+    // dynamic positioning: every marker/label sits at threshold ÷ largest-threshold, so it
+    // is accurate for ANY number of rules and adapts as rules are added/changed.
+    const maxThreshold = ruleThreshold(rules[rules.length - 1]) || 1;
+    const fillPercent = Math.min(100, (total / maxThreshold) * 100);
+    const nextRule = rules.find(function (rule) { return total < ruleThreshold(rule); });
     let messageTemplate;
     if (!nextRule) messageTemplate = blockProps.allUnlockedText;
     else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
     else messageTemplate = blockProps.defaultText;
-    // Kaching-style: ring markers sit ON the track at each threshold, plain labels below.
-    // Edge markers/labels shift so the first/last stay inside the track bounds.
-    function edgeShift(pct, forLabel) {
-      if (pct >= 100) return forLabel ? "-100%" : "-50%";
-      if (pct <= 0) return forLabel ? "0" : "-50%";
-      return forLabel ? "-50%" : "-50%";
+    // Kaching-style ring markers ON the track at each threshold, plain labels below.
+    // Markers stay centered on their point; labels shift at the ends so they never clip.
+    function markerAt(rule) {
+      const pct = Math.max(0, Math.min(100, (ruleThreshold(rule) / maxThreshold) * 100));
+      return { pct: pct, reached: total >= ruleThreshold(rule) };
     }
+    function labelShift(pct) { return pct >= 99 ? "-100%" : pct <= 1 ? "0%" : "-50%"; }
     const markers = rules.map(function (rule) {
-      const pct = Math.min(100, (rule.unlockAt / maxUnlockAt) * 100);
-      const reached = total >= rule.unlockAt;
-      return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
-        '" style="left:' + pct + "%;transform:translate(" + edgeShift(pct, false) + ',-50%)"></span>';
+      const m = markerAt(rule);
+      return '<span class="sc-milestone' + (m.reached ? " sc-done" : "") +
+        '" style="left:' + m.pct + '%"></span>';
     }).join("");
     const labels = rules.map(function (rule) {
-      const pct = Math.min(100, (rule.unlockAt / maxUnlockAt) * 100);
-      const reached = total >= rule.unlockAt;
-      return '<span class="sc-ms-label' + (reached ? " sc-done" : "") +
-        '" style="left:' + pct + "%;transform:translateX(" + edgeShift(pct, true) + ')">' + esc(rule.label) + "</span>";
+      const m = markerAt(rule);
+      return '<span class="sc-ms-label' + (m.reached ? " sc-done" : "") +
+        '" style="left:' + m.pct + "%;transform:translateX(" + labelShift(m.pct) + ')">' + esc(rule.label) + "</span>";
     }).join("");
     // fill starts at the PREVIOUS width; render() bumps it to data-pct in a rAF so the
     // CSS width-transition actually animates (the element is recreated on every render)
@@ -830,7 +841,8 @@
       const giftLineIndex = cart.items.findIndex(function (line) {
         return line.variant_id === giftVariantId && line.properties && line.properties._sc_gift;
       });
-      if (total >= rule.unlockAt && giftLineIndex === -1) {
+      const threshold = ruleThreshold(rule);
+      if (total >= threshold && giftLineIndex === -1) {
         freeGiftBusy = true;
         pausedWrite("cart/add.js", {
           items: [{ id: giftVariantId, quantity: 1, properties: { _sc_gift: "true" } }],
@@ -838,7 +850,7 @@
           freeGiftBusy = false;
           if (added) refreshCart();   // state now matches → next check is a no-op
         });
-      } else if (total < rule.unlockAt && giftLineIndex !== -1) {
+      } else if (total < threshold && giftLineIndex !== -1) {
         freeGiftBusy = true;
         pausedWrite("cart/change.js", { line: giftLineIndex + 1, quantity: 0 })
           .then(function (nextCart) {
