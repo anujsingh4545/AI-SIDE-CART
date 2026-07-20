@@ -1069,9 +1069,18 @@
 
   function swapVariant(oldVariantId, newVariantId, lineQuantity) {
     if (!oldVariantId || !newVariantId || oldVariantId === newVariantId) return Promise.resolve();
+    // cart/update.js `updates` sets ABSOLUTE quantities per variant. If the target variant
+    // is already in the cart, we must merge — set it to its existing qty + the swapped qty —
+    // otherwise the existing line's quantity is overwritten (e.g. swap Navy→Black with a
+    // Black already present would drop Black back to 1 instead of 2).
+    let existingTargetQty = 0;
+    ((cart && cart.items) || []).forEach(function (line) {
+      const isGift = line.properties && line.properties._sc_gift;
+      if (line.variant_id === newVariantId && !isGift) existingTargetQty += line.quantity;
+    });
     const updates = {};
     updates[oldVariantId] = 0;
-    updates[newVariantId] = lineQuantity;
+    updates[newVariantId] = existingTargetQty + lineQuantity;
     return pausedWrite("cart/update.js", { updates: updates })
       .then(function (nextCart) { nextCart ? setCart(nextCart) : refreshCart(); });
   }
