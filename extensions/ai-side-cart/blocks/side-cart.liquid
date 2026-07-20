@@ -1,0 +1,23 @@
+{%- assign spec = app.metafields.cart.published_spec -%}
+{%- if spec -%}
+  <script type="application/json" id="sc-spec">{{ spec.value | json }}</script>
+{%- endif -%}
+<script type="application/json" id="sc-ctx">{
+  "root":        {{ routes.root_url | json }},
+  "moneyFormat": {{ shop.money_format | json }},
+  "currency":    {{ cart.currency.iso_code | json }},
+  "locale":      {{ request.locale.iso_code | json }},
+  "checkoutUrl": "/checkout"
+}</script>
+<div id="sc-root"></div>
+<link rel="stylesheet" href="{{ 'cart.css' | asset_url }}">
+<script src="{{ 'cart-spec.js' | asset_url }}" defer></script>
+<script src="{{ 'cart.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Side Cart",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
