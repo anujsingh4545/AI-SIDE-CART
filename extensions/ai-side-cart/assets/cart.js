@@ -347,7 +347,8 @@
     const qtyStepper = !gift && blockProps.showQuantitySelector
       ? '<span class="sc-qty">' +
         '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity - 1) + '" aria-label="Decrease">−</button>' +
-        '<span class="sc-qty-val">' + item.quantity + "</span>" +
+        '<input class="sc-qty-val" type="number" inputmode="numeric" min="0" step="1" value="' + item.quantity +
+        '" data-qty-input data-line="' + line + '" aria-label="Quantity">' +
         '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity + 1) + '" aria-label="Increase">+</button>' +
         "</span>"
       : "";
@@ -1050,12 +1051,29 @@
   // <select> fires "change", not "click" — a second delegated listener on the shadow root
   shadow.addEventListener("change", function (event) {
     const selectEl = event.target.closest('[data-action="variant"]');
-    if (!selectEl) return;
-    swapVariant(
-      Number(selectEl.dataset.oldVariant),
-      Number(selectEl.value),
-      Number(selectEl.dataset.lineQty)
-    );
+    if (selectEl) {
+      swapVariant(
+        Number(selectEl.dataset.oldVariant),
+        Number(selectEl.value),
+        Number(selectEl.dataset.lineQty)
+      );
+      return;
+    }
+    // typed quantity — commits on blur/Enter, like Kaching's center input
+    const qtyInput = event.target.closest("[data-qty-input]");
+    if (qtyInput) {
+      const stepper = qtyInput.closest(".sc-qty");
+      if (stepper) stepper.classList.add("sc-loading");
+      changeQty(qtyInput.dataset.line, Math.max(0, parseInt(qtyInput.value, 10) || 0));
+    }
+  });
+
+  // Enter commits the typed quantity (blur fires the change handler above)
+  shadow.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && event.target.closest("[data-qty-input]")) {
+      event.preventDefault();
+      event.target.blur();
+    }
   });
 
   shadow.addEventListener("click", function (e) {

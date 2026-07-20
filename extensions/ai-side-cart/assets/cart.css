@@ -73,15 +73,22 @@ a.sc-line-title:hover { text-decoration: underline; }
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 10px center;
 }
-/* segmented qty stepper — dividers between −, value, + */
-.sc-qty { display: inline-flex; align-items: stretch; height: 36px; border: 1px solid var(--sc-border); border-radius: 8px; overflow: hidden; }
+/* segmented qty stepper — −, editable number input, + */
+.sc-qty { position: relative; display: inline-flex; align-items: stretch; height: 36px; border: 1px solid var(--sc-border); border-radius: 8px; overflow: hidden; }
 .sc-qty button { border: 0; background: none; padding: 0 12px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--sc-text); }
 .sc-qty button:hover { color: var(--sc-accent); }
-.sc-qty .sc-qty-val { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; font-weight: 600; font-size: 14px; border-left: 1px solid var(--sc-border); border-right: 1px solid var(--sc-border); }
-/* qty update: keep the −/+ visible but disabled, spinner in place of the number (Kaching) */
+.sc-qty .sc-qty-val {
+  width: 40px; text-align: center; font-weight: 600; font-size: 14px; color: inherit;
+  border: 0; border-left: 1px solid var(--sc-border); border-right: 1px solid var(--sc-border);
+  background: transparent; padding: 0; -moz-appearance: textfield; appearance: textfield;
+}
+.sc-qty .sc-qty-val:focus { outline: none; }
+.sc-qty .sc-qty-val::-webkit-outer-spin-button,
+.sc-qty .sc-qty-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* qty update: keep the −/+ visible but disabled, spinner centered over the control (Kaching) */
 .sc-qty.sc-loading button { pointer-events: none; opacity: .35; }
-.sc-qty.sc-loading .sc-qty-val { color: transparent; position: relative; }
-.sc-qty.sc-loading .sc-qty-val::after {
+.sc-qty.sc-loading .sc-qty-val { color: transparent; }
+.sc-qty.sc-loading::after {
   content: ""; position: absolute; inset: 0; margin: auto; width: 13px; height: 13px;
   border: 2px solid rgba(0,0,0,.18); border-top-color: var(--sc-text); border-radius: 50%;
   animation: sc-spin .7s linear infinite;
