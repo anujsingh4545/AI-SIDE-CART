@@ -747,6 +747,24 @@
     return block && block.props.unlockedBy === "QUANTITY" ? value : value * 100;
   }
 
+  // Milestones are spaced EVENLY (marker i at (i+1)/N of the bar), like Kaching — never
+  // clustered by threshold value. The fill interpolates WITHIN each equal segment so it
+  // reaches marker i exactly when the total hits thresholds[i]. Returns a 0–100 percent.
+  function segmentedFillPercent(total, thresholds) {
+    const count = thresholds.length;
+    if (!count) return 0;
+    if (total >= thresholds[count - 1]) return 100;
+    for (let i = 0; i < count; i++) {
+      if (total < thresholds[i]) {
+        const prev = i === 0 ? 0 : thresholds[i - 1];
+        const span = thresholds[i] - prev;
+        const withinSegment = span > 0 ? (total - prev) / span : 0;
+        return ((i + Math.max(0, Math.min(1, withinSegment))) / count) * 100;
+      }
+    }
+    return 100;
+  }
+
   function formatProgressAmount(amount) {
     const block = progressBlock();
     return block && block.props.unlockedBy === "QUANTITY" ? String(amount) : money(amount);
@@ -785,31 +803,28 @@
     if (!rules.length || !cart) return "";
     const blockProps = block.props;
     const total = progressTotal();
-    // dynamic positioning: every marker/label sits at threshold ÷ largest-threshold, so it
-    // is accurate for ANY number of rules and adapts as rules are added/changed.
-    const maxThreshold = ruleThreshold(rules[rules.length - 1]) || 1;
-    const fillPercent = Math.min(100, (total / maxThreshold) * 100);
+    const count = rules.length;
+    const thresholds = rules.map(ruleThreshold);
+    // EVEN spacing: marker i sits at (i+1)/N of the bar regardless of its threshold value,
+    // so markers never cluster and labels never collide no matter how many rules exist.
+    const fillPercent = segmentedFillPercent(total, thresholds);
     const nextRule = rules.find(function (rule) { return total < ruleThreshold(rule); });
     let messageTemplate;
     if (!nextRule) messageTemplate = blockProps.allUnlockedText;
     else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
     else messageTemplate = blockProps.defaultText;
-    // Kaching-style ring markers ON the track at each threshold, plain labels below.
-    // Markers stay centered on their point; labels shift at the ends so they never clip.
-    function markerAt(rule) {
-      const pct = Math.max(0, Math.min(100, (ruleThreshold(rule) / maxThreshold) * 100));
-      return { pct: pct, reached: total >= ruleThreshold(rule) };
-    }
-    function labelShift(pct) { return pct >= 99 ? "-100%" : pct <= 1 ? "0%" : "-50%"; }
-    const markers = rules.map(function (rule) {
-      const m = markerAt(rule);
-      return '<span class="sc-milestone' + (m.reached ? " sc-done" : "") +
-        '" style="left:' + m.pct + '%"></span>';
+    // Kaching-style ring markers ON the track, plain labels below, evenly distributed.
+    function markerPct(i) { return ((i + 1) / count) * 100; }
+    function labelShift(i) { return i === count - 1 ? "-100%" : "-50%"; }
+    const markers = rules.map(function (rule, i) {
+      const reached = total >= thresholds[i];
+      return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
+        '" style="left:' + markerPct(i) + '%"></span>';
     }).join("");
-    const labels = rules.map(function (rule) {
-      const m = markerAt(rule);
-      return '<span class="sc-ms-label' + (m.reached ? " sc-done" : "") +
-        '" style="left:' + m.pct + "%;transform:translateX(" + labelShift(m.pct) + ')">' + esc(rule.label) + "</span>";
+    const labels = rules.map(function (rule, i) {
+      const reached = total >= thresholds[i];
+      return '<span class="sc-ms-label' + (reached ? " sc-done" : "") +
+        '" style="left:' + markerPct(i) + "%;transform:translateX(" + labelShift(i) + ')">' + esc(rule.label) + "</span>";
     }).join("");
     // fill starts at the PREVIOUS width; render() bumps it to data-pct in a rAF so the
     // CSS width-transition actually animates (the element is recreated on every render)
