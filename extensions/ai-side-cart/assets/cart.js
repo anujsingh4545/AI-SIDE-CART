@@ -431,11 +431,11 @@
     var originalOpen = xhrProto.open, originalSend = xhrProto.send,
         originalSetHeader = xhrProto.setRequestHeader;
     xhrProto.open = function (method, url) {
-      try { this._sideCart = { method: method, url: String(url), headers: {} }; } catch (e) {}
+      try { this._sideCart = { method: method, url: String(url), headers: {} }; } catch (e) { /* instrumentation only; degrade to passthrough */ }
       return originalOpen.apply(this, arguments);
     };
     xhrProto.setRequestHeader = function (name, value) {
-      try { if (this._sideCart) this._sideCart.headers[name] = value; } catch (e) {}
+      try { if (this._sideCart) this._sideCart.headers[name] = value; } catch (e) { /* instrumentation only; degrade to passthrough */ }
       return originalSetHeader.apply(this, arguments);
     };
     xhrProto.send = function (body) {
@@ -493,6 +493,9 @@
           ["active", "is-open", "animate", "open"].forEach(function (cls) {
             nativeEl.classList.remove(cls);
           });
+          nativeEl.querySelectorAll(NATIVE_CLOSE_BUTTON_SELECTORS).forEach(function (closeButton) {
+            closeButton.click();   // themes that only close via their own button
+          });
         } catch (closeError) { /* one drawer failing must not stop the rest */ }
       });
     });
@@ -539,7 +542,7 @@
   function syncCartCount(count) {
     COUNT_SYNC_TARGETS.forEach(function (target) {
       document.querySelectorAll(target.selector).forEach(function (el) {
-        try { COUNT_SYNC_APPLIERS[target.type](el, count, target); } catch (syncError) {}
+        try { COUNT_SYNC_APPLIERS[target.type](el, count, target); } catch (syncError) { /* one bad target must not stop the rest */ }
       });
     });
   }
@@ -871,10 +874,10 @@
   root.addEventListener("click", function (e) {
     var t = e.target.closest("[data-action]");
     if (!t) return;
-    route(t.dataset.action, t, e);
+    route(t.dataset.action, t);
   });
 
-  function route(action, actionTarget, event) {
+  function route(action, actionTarget) {
     switch (action) {
       case "qty": changeQty(actionTarget.dataset.line, Number(actionTarget.dataset.qty)); break;
       case "remove": changeQty(actionTarget.dataset.line, 0); break;
