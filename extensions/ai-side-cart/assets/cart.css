@@ -1,5 +1,6 @@
-/* Side Cart — static stylesheet. No merchant colors here; everything reads --sc-* */
-#sc-root {
+/* Side Cart — stylesheet injected INTO the widget's shadow root. Scoped to the shadow;
+   :host is the light-DOM #sc-root element. No merchant colors here; everything reads --sc-* */
+:host {
   --sc-bg: #fff; --sc-text: #111; --sc-accent: #6d28d9; --sc-accent-text: #fff;
   --sc-radius: 12px; --sc-img: 88px; --sc-gap: 12px; --sc-border: #e6e6e6;
   --sc-line: #eee; --sc-muted: #8a8a8a;
@@ -9,23 +10,23 @@
   color: var(--sc-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
+*, *::before, *::after { box-sizing: border-box; }
 #sc-overlay {
   position: fixed; inset: 0; background: rgba(17,17,17,.45);
   opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 2147483646;
 }
 #side-cart {
   position: fixed; top: 0; right: 0; height: 100%;
-  width: min(420px, 100vw); background: var(--sc-bg); color: var(--sc-text);
+  width: min(100vw, 525px); background: var(--sc-bg); color: var(--sc-text);
   transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
   z-index: 2147483647; display: flex; flex-direction: column;
   box-shadow: -10px 0 40px rgba(0,0,0,.18); font-size: var(--sc-font-size); line-height: 1.4;
 }
-#sc-root.sc-open #side-cart { transform: none; }
-#sc-root.sc-open #sc-overlay { opacity: 1; pointer-events: auto; }
+:host(.sc-open) #side-cart { transform: none; }
+:host(.sc-open) #sc-overlay { opacity: 1; pointer-events: auto; }
 #sc-header { flex: none; }
 #sc-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }
 #sc-footer { flex: none; background: var(--sc-bg); box-shadow: 0 -1px 0 var(--sc-line); }
-#sc-root *, #sc-root *::before, #sc-root *::after { box-sizing: border-box; }
 .sc-block { padding: 12px 20px; }
 
 /* TOP_BAR — centered title, close pinned right */
@@ -119,6 +120,3 @@
 .sc-trust { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; color: var(--sc-muted); font-size: 12px; }
 .sc-pay { display: flex; justify-content: center; gap: 6px; }
 .sc-pay span { border: 1px solid var(--sc-border); border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 600; color: var(--sc-muted); background: var(--sc-bg); }
-
-/* count-sync: Dawn hides the bubble when empty; we force visibility to track count */
-.cart-count-bubble.sc-visible { visibility: visible !important; }

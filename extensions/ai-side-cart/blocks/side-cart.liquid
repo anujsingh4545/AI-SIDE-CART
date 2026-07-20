@@ -7,10 +7,10 @@
   "moneyFormat": {{ shop.money_format | json }},
   "currency":    {{ cart.currency.iso_code | json }},
   "locale":      {{ request.locale.iso_code | json }},
-  "checkoutUrl": "/checkout"
+  "checkoutUrl": "/checkout",
+  "cssUrl":      {{ 'cart.css' | asset_url | json }}
 }</script>
 <div id="sc-root"></div>
-<link rel="stylesheet" href="{{ 'cart.css' | asset_url }}">
 <script src="{{ 'cart-spec.js' | asset_url }}" defer></script>
 <script src="{{ 'cart.js' | asset_url }}" defer></script>
 

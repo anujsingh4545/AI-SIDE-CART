@@ -4,36 +4,42 @@
 
   const _fetch = window.fetch.bind(window); // saved BEFORE any patching (Task 4)
 
-  function $(id) { return document.getElementById(id); }
-
   function readJson(id) {
-    const el = $(id);
+    const el = document.getElementById(id);   // config JSON lives in the light DOM
     if (!el) return null;
     try { return JSON.parse(el.textContent); } catch (e) { return null; }
   }
 
   const spec = readJson("sc-spec") || window.__SC_SPEC__ || null;
   const ctx = readJson("sc-ctx") || { root: "/", moneyFormat: "{{amount}}", currency: "", locale: "", checkoutUrl: "/checkout" };
-  const root = $("sc-root");
-  if (!spec || !root) return; // no spec / no mount → silent no-op, theme cart untouched
+  const host = document.getElementById("sc-root");
+  if (!spec || !host) return; // no spec / no mount → silent no-op, theme cart untouched
+
+  // Render the whole widget inside a Shadow DOM so the theme's CSS can't leak in and
+  // ours can't leak out. The stylesheet is injected INTO the shadow via <link> (an
+  // external <link> in the page's light DOM would not cross the shadow boundary).
+  const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
+  function $(id) { return shadow.getElementById(id); }   // every widget query is shadow-scoped
 
   let cart = null;
   let notesOpen = false;
   let pausedWriteDepth = 0;   // >0 while any of OUR cart writes is in flight
   function interceptorIsPaused() { return pausedWriteDepth > 0; }
 
-  root.innerHTML =
+  shadow.innerHTML =
+    (ctx.cssUrl ? '<link rel="stylesheet" href="' + esc(ctx.cssUrl) + '">' : "") +
     '<div id="sc-overlay" data-action="close"></div>' +
     '<aside id="side-cart" role="dialog" aria-modal="true" aria-label="Cart">' +
     '<div id="sc-header"></div><div id="sc-body"></div><div id="sc-footer"></div>' +
     '</aside>';
 
+  // The .sc-open state class lives on the light-DOM host; CSS reacts via :host(.sc-open)
   function openDrawer() {
-    root.classList.add("sc-open");
+    host.classList.add("sc-open");
     document.dispatchEvent(new CustomEvent("side-cart:open"));
   }
   function closeDrawer() {
-    root.classList.remove("sc-open");
+    host.classList.remove("sc-open");
     document.dispatchEvent(new CustomEvent("side-cart:close"));
   }
 
@@ -108,7 +114,8 @@
   }
 
   function applyTokens() {
-    root.style.cssText = styleVars(spec.general || {});
+    // custom properties set on the light-DOM host inherit across the shadow boundary
+    host.style.cssText = styleVars(spec.general || {});
   }
 
   function wrap(type, block, inner) {
@@ -607,7 +614,11 @@
   const COUNT_SYNC_APPLIERS = {
     text: function (el, count) { el.textContent = count; el.removeAttribute("hidden"); },
     attribute: function (el, count, target) { el.setAttribute(target.attribute, count); },
-    toggle: function (el, count, target) { el.classList.toggle(target.showClass, count > 0); },
+    toggle: function (el, count, target) {
+      const visible = count > 0;
+      el.classList.toggle(target.showClass, visible);
+      el.style.visibility = visible ? "visible" : "";   // light-DOM bubble; can't be styled from our shadow
+    },
   };
 
   function syncCartCount(count) {
@@ -784,7 +795,7 @@
   function onTimerTick() {
     const block = enabledTimerBlock();
     if (!block) return;
-    const timerSpan = root.querySelector("[data-sc-timer]");
+    const timerSpan = shadow.querySelector("[data-sc-timer]");
     if (timerSpan) timerSpan.textContent = timerText();     // 1s tick touches ONE span
     const deadline = readTimerDeadline();
     if (deadline && Date.now() >= deadline && !timerExpiryHandled) {
@@ -883,7 +894,7 @@
   }
 
   // notes save on blur (capture phase — blur does not bubble)
-  root.addEventListener("blur", function (event) {
+  shadow.addEventListener("blur", function (event) {
     if (event.target && event.target.id === "sc-notes") saveOrderNote(event.target.value);
   }, true);
   /* §9 variant selector — lazy per-handle product data, single-request swap */
@@ -934,8 +945,8 @@
       .then(function (nextCart) { nextCart ? setCart(nextCart) : refreshCart(); });
   }
 
-  // <select> fires "change", not "click" — a second delegated listener on the same root
-  root.addEventListener("change", function (event) {
+  // <select> fires "change", not "click" — a second delegated listener on the shadow root
+  shadow.addEventListener("change", function (event) {
     const selectEl = event.target.closest('[data-action="variant"]');
     if (!selectEl) return;
     swapVariant(
@@ -945,7 +956,7 @@
     );
   });
 
-  root.addEventListener("click", function (e) {
+  shadow.addEventListener("click", function (e) {
     const t = e.target.closest("[data-action]");
     if (!t) return;
     route(t.dataset.action, t);
@@ -972,7 +983,9 @@
     }
   }
 
-  window.SideCart = { open: openDrawer, close: closeDrawer, refresh: refreshCart };
+  // `root` is the shadow root — query it to read/update widget content, e.g.
+  // window.SideCart.root.querySelector('#sc-body')
+  window.SideCart = { root: shadow, open: openDrawer, close: closeDrawer, refresh: refreshCart };
 
   /* Boot — runs LAST, after every region's config bindings are assigned. These calls
      are synchronous and read config declared across §4–§9, so they must not run
