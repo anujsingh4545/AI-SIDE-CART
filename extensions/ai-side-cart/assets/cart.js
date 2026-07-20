@@ -205,14 +205,6 @@
     return getCart().then(setCart);
   }
 
-  refreshCart(); // boot: first paint
-
-  installFetchInterceptor();
-  installXhrInterceptor();
-  installCartIconClickDetector();
-  disableNativeCart();
-  startTimerEngine();
-
   /* §3 products + writes */
   function pausedWrite(path, body) {
     pausedWriteDepth += 1;
@@ -899,4 +891,15 @@
   }
 
   window.SideCart = { open: openDrawer, close: closeDrawer, refresh: refreshCart };
+
+  /* Boot — runs LAST, after every region's config vars are assigned. These calls
+     are synchronous and read config declared across §4–§9, so they must not run
+     before those var assignments execute (function declarations hoist; var values
+     do not). Interceptor closures read their config lazily, so patching here is safe. */
+  installFetchInterceptor();
+  installXhrInterceptor();
+  installCartIconClickDetector();
+  disableNativeCart();
+  startTimerEngine();
+  refreshCart(); // first paint
 })();
