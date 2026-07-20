@@ -1,73 +1,19 @@
-/* Side Cart runtime — single classic-script IIFE. No modules, no build. */
+/* Side Cart v2 — custom elements + SideCartStore + morph. Single classic script. */
 (function () {
   "use strict";
 
-  const _fetch = window.fetch.bind(window); // saved BEFORE any patching (Task 4)
+  // saved BEFORE any patching (§5); guarded so this module can also load under the node
+  // smoke-test harness (Task 1 step 3), where the `window` stub has no `fetch` — real
+  // browser execution always has window.fetch, so behavior there is unchanged.
+  const _fetch = window.fetch ? window.fetch.bind(window) : function () {
+    return Promise.reject(new Error("fetch unavailable"));
+  };
 
-  function readJson(id) {
-    const el = document.getElementById(id);   // config JSON lives in the light DOM
-    if (!el) return null;
-    try { return JSON.parse(el.textContent); } catch (e) { return null; }
-  }
+  // assigned once by boot (§6); read at call time by money()/blocks/store
+  let spec = null;
+  let ctx = null;
 
-  const spec = readJson("sc-spec") || window.__SC_SPEC__ || null;
-  const ctx = readJson("sc-ctx") || { root: "/", moneyFormat: "{{amount}}", currency: "", locale: "", checkoutUrl: "/checkout" };
-  const host = document.getElementById("sc-root");
-  if (!spec || !host) return; // no spec / no mount → silent no-op, theme cart untouched
-
-  // Render the whole widget inside a Shadow DOM so the theme's CSS can't leak in and
-  // ours can't leak out. The stylesheet is injected INTO the shadow via <link> (an
-  // external <link> in the page's light DOM would not cross the shadow boundary).
-  const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
-  // keep the host non-empty in the LIGHT DOM: all real content lives in the shadow, which
-  // leaves #sc-root matching `div:empty{display:none}` rules some themes ship (Dawn). This
-  // unslotted, unrendered sentinel makes :empty never match (belt-and-suspenders with :host).
-  if (!host.firstChild) host.appendChild(document.createElement("span"));
-  function $(id) { return shadow.getElementById(id); }   // every widget query is shadow-scoped
-
-  let cart = null;
-  let notesOpen = false;
-  let pausedWriteDepth = 0;   // >0 while any of OUR cart writes is in flight
-  function interceptorIsPaused() { return pausedWriteDepth > 0; }
-
-  // Critical CSS injected SYNCHRONOUSLY (inline <style>, applies on first paint) so the
-  // drawer starts off-screen with NO transition. The external cart.css loads async via
-  // <link>; without this the drawer would paint unstyled (in flow), then the late CSS
-  // would apply translateX(100%) WITH the transition and visibly slide off to the right
-  // on every load. Same transform value + no transition here = zero animation on load;
-  // open/close still animate because the full sheet adds the transition afterward.
-  const CRITICAL_CSS =
-    ":host{display:block!important}" +
-    "*{box-sizing:border-box}" +
-    "#sc-overlay{position:fixed;inset:0;background:rgba(17,17,17,.45);opacity:0;pointer-events:none;z-index:2147483646}" +
-    "#side-cart{position:fixed;top:0;right:0;height:100%;width:min(100vw,525px);background:#fff;" +
-    "transform:translateX(100%);z-index:2147483647;display:flex;flex-direction:column}" +
-    ":host(.sc-open) #side-cart{transform:none}" +
-    ":host(.sc-open) #sc-overlay{opacity:1;pointer-events:auto}";
-
-  shadow.innerHTML =
-    "<style>" + CRITICAL_CSS + "</style>" +
-    (ctx.cssUrl ? '<link rel="stylesheet" href="' + esc(ctx.cssUrl) + '">' : "") +
-    '<div id="sc-overlay" data-action="close"></div>' +
-    '<aside id="side-cart" role="dialog" aria-modal="true" aria-label="Cart">' +
-    '<div id="sc-header"></div><div id="sc-body"></div><div id="sc-footer"></div>' +
-    '</aside>';
-
-  // The .sc-open state class lives on the light-DOM host; CSS reacts via :host(.sc-open)
-  function openDrawer() {
-    host.classList.add("sc-open");
-    document.dispatchEvent(new CustomEvent("side-cart:open"));
-  }
-  function closeDrawer() {
-    host.classList.remove("sc-open");
-    document.dispatchEvent(new CustomEvent("side-cart:close"));
-  }
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeDrawer();
-  });
-
-  /* §2 render core */
+  /* ---------- §1 utils ---------- */
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -84,28 +30,16 @@
     const value = Number(cents || 0) / 100;
     const amount = groupThousands(value.toFixed(2));
     const whole = groupThousands(String(Math.round(value)));
-    let out = String(ctx.moneyFormat || "{{amount}}");
+    let out = String((ctx && ctx.moneyFormat) || "{{amount}}");
     out = out.replace(/\{\{\s*amount_no_decimals[^}]*\}\}/g, whole)
              .replace(/\{\{\s*amount[^}]*\}\}/g, amount);
     return out.replace(/<[^>]*>/g, ""); // some shops wrap the format in HTML spans
   }
 
-  function tvars() {
-    const vars = {
-      cart_total: money(cart ? cart.total_price : 0),
-      count: cart ? cart.item_count : 0,
-      timer: timerText(),
-    };
-    const progress = progressVars();
-    for (const progressKey in progress) vars[progressKey] = progress[progressKey];
-    return vars;
-  }
-
-  // Escape the WHOLE template first, then substitute already-safe values.
-  function fill(tpl, vars) {
-    return esc(tpl).replace(/\{\{\s*(\w+)\s*\}\}/g, function (_, key) {
-      return key in vars ? esc(vars[key]) : "—";
-    });
+  function readJson(id) {
+    const el = document.getElementById(id);   // config JSON lives in the light DOM
+    if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch (e) { return null; }
   }
 
   const VAR_MAP = {
@@ -133,47 +67,83 @@
       .join(";");
   }
 
-  function applyTokens() {
-    // custom properties set on the light-DOM host inherit across the shadow boundary
-    host.style.cssText = styleVars(spec.general || {});
+  function numericIdFromGid(gid) {
+    const match = String(gid || "").match(/(\d+)$/);
+    return match ? Number(match[1]) : null;
   }
 
-  function wrap(type, block, inner) {
-    if (!inner) return "";
-    const vars = styleVars(block.style);
-    return '<div class="sc-block sc-blk-' + esc(type) + '"' +
-      (vars ? ' style="' + vars + '"' : "") + ">" + inner + "</div>";
+  const TRASH_ICON =
+    '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+    '<path d="M14 3h-3.53a3.07 3.07 0 00-.6-1.65C9.44.82 8.8.5 8 .5s-1.44.32-1.87.85A3.06 3.06 0 005.53 3H2a.5.5 0 000 1h1.25v10c0 .28.22.5.5.5h8.5a.5.5 0 00.5-.5V4H14a.5.5 0 000-1zM6.91 1.98c.23-.29.58-.48 1.09-.48s.85.19 1.09.48c.2.24.3.6.36 1.02h-2.9c.05-.42.17-.78.36-1.02zm4.84 11.52h-7.5V4h7.5v9.5z"/>' +
+    '<path d="M6.55 5.25a.5.5 0 00-.5.5v6a.5.5 0 001 0v-6a.5.5 0 00-.5-.5zM9.45 5.25a.5.5 0 00-.5.5v6a.5.5 0 001 0v-6a.5.5 0 00-.5-.5z"/></svg>';
+  const TAG_ICON =
+    '<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">' +
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M7 0h3a2 2 0 012 2v3a1 1 0 01-.3.7l-6 6a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4l6-6A1 1 0 017 0zm2 2a1 1 0 102 0 1 1 0 00-2 0z"/></svg>';
+  const BAG_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>' +
+    '<path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
+
+  /* §7 timer — per-visitor deadline in a first-party cookie; one interval app-wide */
+  const TIMER_COOKIE_NAME = "_sc_timer_end";
+
+  function readTimerDeadline() {
+    const match = document.cookie.match(new RegExp("(?:^|; )" + TIMER_COOKIE_NAME + "=(\\d+)"));
+    return match ? Number(match[1]) : null;
   }
 
-  function safe(fn, block) {
-    try { return fn(block) || ""; } catch (e) { return ""; } // broken block never breaks the cart
+  function writeTimerDeadline(epochMs) {
+    document.cookie = TIMER_COOKIE_NAME + "=" + epochMs + ";path=/;max-age=86400;SameSite=Lax";
   }
 
-  const registry = {
-    TOP_BAR: TOP_BAR,
-    SUBTOTAL: SUBTOTAL,
-    CHECKOUT_BUTTON: CHECKOUT_BUTTON,
-    PRODUCTS_IN_CART: PRODUCTS_IN_CART,
-    PROGRESS_BAR: PROGRESS_BAR,
-    TIMER: TIMER,
-    DISCOUNT_CODE: DISCOUNT_CODE,
-    ORDER_NOTES: ORDER_NOTES,
-    TRUST_BADGES: TRUST_BADGES,
-    PAYMENT_METHODS: PAYMENT_METHODS,
-  };
+  function stampFreshDeadline(props) {
+    writeTimerDeadline(Date.now() + (Number(props.timeLimit) || 30) * 60000);
+  }
 
-  function TOP_BAR(block) {
-    const blockProps = block.props || {};
-    const count = blockProps.showItemCount && cart
-      ? ' <span class="sc-count">• ' + cart.item_count + "</span>" : "";
-    return '<div class="sc-topbar"><span class="sc-title">' + esc(blockProps.title) + count +
-      '</span><button class="sc-close" data-action="close" aria-label="Close">✕</button></div>';
+  // progress helpers — v1 logic, parameterized (no module-global spec/cart reads)
+  function progressBlockOf(theSpec) {
+    const block = theSpec && theSpec.header && theSpec.header.PROGRESS_BAR;
+    return block && block.enabled && block.props && Array.isArray(block.props.rules) ? block : null;
+  }
+  function progressRules(theSpec) {
+    const block = progressBlockOf(theSpec);
+    if (!block) return [];
+    return block.props.rules.slice().sort(function (a, b) { return a.unlockAt - b.unlockAt; });
+  }
+  function progressTotal(theSpec, cart) {
+    const block = progressBlockOf(theSpec);
+    if (!cart || !block) return 0;
+    return block.props.unlockedBy === "QUANTITY" ? cart.item_count : cart.total_price;
+  }
+  function ruleThreshold(theSpec, rule) {
+    const block = progressBlockOf(theSpec);
+    const value = Number(rule.unlockAt) || 0;
+    return block && block.props.unlockedBy === "QUANTITY" ? value : value * 100;
+  }
+
+  // Milestones are spaced EVENLY (marker i at (i+1)/N of the bar), like Kaching — never
+  // clustered by threshold value. The fill interpolates WITHIN each equal segment so it
+  // reaches marker i exactly when the total hits thresholds[i]. Returns a 0–100 percent.
+  function segmentedFillPercent(total, thresholds) {
+    const count = thresholds.length;
+    if (!count) return 0;
+    if (total >= thresholds[count - 1]) return 100;
+    for (let i = 0; i < count; i++) {
+      if (total < thresholds[i]) {
+        const prev = i === 0 ? 0 : thresholds[i - 1];
+        const span = thresholds[i] - prev;
+        const withinSegment = span > 0 ? (total - prev) / span : 0;
+        return ((i + Math.max(0, Math.min(1, withinSegment))) / count) * 100;
+      }
+    }
+    return 100;
   }
 
   // aggregate every discount the cart carries — cart-level (order discounts) AND line-level
   // (product/collection discounts, which our footer previously missed), grouped by title.
   // Gift lines are skipped (their price-zeroing discount is represented by the FREE badge).
-  function collectDiscounts() {
+  function collectDiscounts(cart) {
     const byTitle = {};
     const order = [];
     function add(title, amount) {
@@ -194,210 +164,718 @@
       .map(function (title) { return { title: title, amount: byTitle[title] }; });
   }
 
-  function SUBTOTAL(block) {
-    const blockProps = block.props || {};
-    if (!cart) return "";
-    // every applied discount (cart-level AND line-level, automatic or code) shown as a row
-    const discountRows = collectDiscounts()
-      .map(function (discount) {
-        return '<div class="sc-disc-line"><span class="sc-disc-label">Discounts</span>' +
-          '<span class="sc-disc-chip">' + TAG_ICON + " " + esc(discount.title) + "</span>" +
-          '<span class="sc-disc-amt">-' + money(discount.amount) + "</span></div>";
-      }).join("");
-    const original = blockProps.showOriginalPrice && cart.original_total_price > cart.total_price
-      ? '<s class="sc-original">' + money(cart.original_total_price) + "</s>" : "";
-    return '<div class="sc-summary">' + discountRows +
-      '<div class="sc-subtotal"><span>' + esc(blockProps.title) + "</span><span>" + original +
-      '<span class="sc-discounted">' + money(cart.total_price) + "</span></span></div></div>";
+  /* ---------- §2 morph — Shopify-style in-place DOM reconciliation ---------- */
+  function morph(rootEl, newHtml) {
+    const template = document.createElement("template");
+    template.innerHTML = newHtml;
+    morphChildren(rootEl, template.content);
   }
 
-  function CHECKOUT_BUTTON(block) {
-    return '<button class="sc-checkout" data-action="checkout">' +
-      fill((block.props || {}).title, tvars()) + "</button>" +
-      '<button class="sc-continue" data-action="close">continue shopping</button>';
+  function nodeKey(node) {
+    return node.nodeType === 1 && node.hasAttribute("data-key") ? node.getAttribute("data-key") : null;
   }
 
-  // when the cart is empty, Kaching hides every functional block and shows only the
-  // header + a centered empty state; only these block types render in that case
-  const EMPTY_ALLOWED = { TOP_BAR: true, PRODUCTS_IN_CART: true };
+  function compatible(oldNode, newNode) {
+    if (oldNode.nodeType !== newNode.nodeType) return false;
+    if (oldNode.nodeType !== 1) return true;                 // text/comment: pair by position
+    if (oldNode.tagName !== newNode.tagName) return false;
+    return nodeKey(oldNode) === nodeKey(newNode);            // keyed only matches same key
+  }
 
-  function render() {
-    snapshotInputs();
-    applyTokens();
-    const isEmpty = !cart || !cart.items || cart.items.length === 0;
-    host.classList.toggle("sc-empty-cart", isEmpty);   // CSS hooks off the light-DOM host
-    ["header", "body", "footer"].forEach(function (region) {
-      const host = $("sc-" + region);
-      const blocks = spec[region] || {};
-      if (blocks.style) host.style.cssText = styleVars(blocks.style);
-      host.innerHTML = Object.keys(blocks)
-        .filter(function (blockKey) {
-          return blockKey !== "style" && blocks[blockKey] && blocks[blockKey].enabled && registry[blockKey] &&
-            (!isEmpty || EMPTY_ALLOWED[blockKey]);   // suppress functional blocks on an empty cart
-        })
-        .map(function (blockKey) { return wrap(blockKey, blocks[blockKey], safe(registry[blockKey], blocks[blockKey])); })
-        .join("");
+  function morphChildren(oldParent, newParent) {
+    const keyedOld = new Map();
+    Array.from(oldParent.children).forEach(function (el) {
+      const key = nodeKey(el);
+      if (key) keyedOld.set(key, el);
     });
-    restoreInputs();
-    syncCartCount(cart ? cart.item_count : 0);
-    animateProgressFill();
-  }
-
-  // the progress fill is rendered at its PREVIOUS width; bump it to the target in a rAF
-  // so the CSS width-transition animates smoothly instead of snapping to the new value
-  function animateProgressFill() {
-    const fillEl = shadow.querySelector(".sc-fill[data-pct]");
-    if (!fillEl) return;
-    const target = parseFloat(fillEl.dataset.pct) || 0;
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () { fillEl.style.width = target + "%"; });
+    const newNodes = Array.from(newParent.childNodes);
+    let cursor = oldParent.firstChild;
+    newNodes.forEach(function (newNode) {
+      const key = nodeKey(newNode);
+      let match = null;
+      if (key && keyedOld.has(key)) match = keyedOld.get(key);
+      else if (cursor && compatible(cursor, newNode)) match = cursor;
+      if (match) {
+        if (match === cursor) cursor = cursor.nextSibling;
+        else oldParent.insertBefore(match, cursor);          // keyed node moved into place
+        morphNode(match, newNode);
+      } else {
+        oldParent.insertBefore(newNode, cursor);             // adopt brand-new node
+      }
     });
-    lastFillPercent = target;
+    while (cursor) { const next = cursor.nextSibling; oldParent.removeChild(cursor); cursor = next; }
   }
 
+  function morphNode(oldNode, newNode) {
+    if (oldNode.nodeType !== 1) {
+      if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue;
+      return;
+    }
+    syncAttributes(oldNode, newNode);
+    syncFormState(oldNode, newNode);
+    if (oldNode.tagName !== "TEXTAREA") morphChildren(oldNode, newNode);
+  }
+
+  function syncAttributes(oldEl, newEl) {
+    Array.from(oldEl.attributes).forEach(function (attr) {
+      if (!newEl.hasAttribute(attr.name)) oldEl.removeAttribute(attr.name);
+    });
+    Array.from(newEl.attributes).forEach(function (attr) {
+      if (oldEl.getAttribute(attr.name) !== attr.value) oldEl.setAttribute(attr.name, attr.value);
+    });
+  }
+
+  function isFocused(el) { return el.getRootNode().activeElement === el; }
+
+  /* Form-state rules (regression #10 depends on these):
+     - focused control: never touched (typing/selection survives every update)
+     - INPUT with data-sync-value (e.g. qty): value property synced from template when unfocused
+     - INPUT without it (e.g. discount code): typed value preserved even when unfocused
+     - checkbox/radio: checked synced when unfocused; TEXTAREA never recursed, value only
+       synced when it carries data-sync-value; SELECT value synced when unfocused */
+  function syncFormState(oldEl, newEl) {
+    const tag = oldEl.tagName;
+    if (tag === "INPUT") {
+      if (isFocused(oldEl)) return;
+      if (newEl.hasAttribute("data-sync-value") && oldEl.value !== newEl.value) oldEl.value = newEl.value;
+      if (oldEl.type === "checkbox" || oldEl.type === "radio") oldEl.checked = newEl.checked;
+    } else if (tag === "TEXTAREA") {
+      if (!isFocused(oldEl) && newEl.hasAttribute("data-sync-value")) oldEl.value = newEl.textContent;
+    } else if (tag === "SELECT") {
+      if (!isFocused(oldEl) && newEl.value && oldEl.value !== newEl.value) oldEl.value = newEl.value;
+    }
+  }
+
+  /* ---------- §3 store — single source of truth (SRP; blocks depend only on this API) ---------- */
   function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
 
-  function getCart(attempt) {
-    attempt = attempt || 0;
-    return _fetch(ctx.root + "cart.js", {
-      headers: { "X-Side-Cart": "1", "Cache-Control": "no-cache" },
-    }).then(function (res) {
-      if (res.status === 204) {
-        return _fetch(ctx.root + "cart/update.js", {
-          method: "POST",
-          headers: { "X-Side-Cart": "1", "Content-Type": "application/json" },
-          body: "{}",
-        }).then(function (r2) { return r2.json(); });
-      }
-      if (!res.ok && res.status >= 500 && attempt < 3) {
-        return wait(200 * (attempt + 1)).then(function () { return getCart(attempt + 1); });
-      }
-      return res.json();
-    }).catch(function () {
-      if (attempt < 3) return wait(200 * (attempt + 1)).then(function () { return getCart(attempt + 1); });
-      return null; // keep last good cart
+  // §5 count-sync — we intercept silently, so the theme never learns about
+  // programmatic changes; we update its own bubble ourselves. Extend per theme.
+  const COUNT_SYNC_TARGETS = [
+    { selector: ".cart-count-bubble span[aria-hidden='true']", type: "text" },   // Dawn
+    { selector: "#CartCount, .header__cart-count",             type: "text" },
+    { selector: "[data-cart-count]", type: "attribute", attribute: "data-cart-count" },
+    { selector: ".cart-count-bubble", type: "toggle", showClass: "sc-visible" },  // Dawn dot
+  ];
+
+  const COUNT_SYNC_APPLIERS = {
+    text: function (el, count) { el.textContent = count; el.removeAttribute("hidden"); },
+    attribute: function (el, count, target) { el.setAttribute(target.attribute, count); },
+    toggle: function (el, count, target) {
+      const visible = count > 0;
+      el.classList.toggle(target.showClass, visible);
+      el.style.visibility = visible ? "visible" : "";   // light-DOM bubble; can't be styled from our shadow
+    },
+  };
+
+  class SideCartStore extends EventTarget {
+    constructor(theSpec, theCtx) {
+      super();
+      this.spec = theSpec;
+      this.ctx = theCtx;
+      this.cart = null;
+      this.lastOwnWriteAt = 0;       // read by the PO net (§5): "our write, ignore"
+      this.lastCartReactionAt = 0;   // shared dedupe between interceptor and PO net
+      this._writeDepth = 0;
+      this._freeGiftBusy = false;
+    }
+
+    get busy() { return this._writeDepth > 0; }
+
+    refresh() {
+      const self = this;
+      return this._getCart(0).then(function (cart) { self.setCart(cart); });
+    }
+
+    _getCart(attempt) {
+      attempt = attempt || 0;
+      const self = this;
+      return _fetch(this.ctx.root + "cart.js", {
+        headers: { "X-Side-Cart": "1", "Cache-Control": "no-cache" },
+      }).then(function (res) {
+        if (res.status === 204) {
+          return _fetch(self.ctx.root + "cart/update.js", {
+            method: "POST",
+            headers: { "X-Side-Cart": "1", "Content-Type": "application/json" },
+            body: "{}",
+          }).then(function (r2) { return r2.json(); });
+        }
+        if (!res.ok && res.status >= 500 && attempt < 3) {
+          return wait(200 * (attempt + 1)).then(function () { return self._getCart(attempt + 1); });
+        }
+        return res.json();
+      }).catch(function () {
+        if (attempt < 3) return wait(200 * (attempt + 1)).then(function () { return self._getCart(attempt + 1); });
+        return null; // keep last good cart
+      });
+    }
+
+    setCart(next) {
+      if (!next) return;                       // failed fetch → keep last good cart
+      this.cart = next;
+      window.__sideCartLast = next;            // the interceptor's add-diff depends on this
+      this._checkFreeGift();
+      this._syncCartCount();
+      this.dispatchEvent(new CustomEvent("sc:update"));
+      document.dispatchEvent(new CustomEvent("side-cart:updated", { detail: { cart: this.cart } }));
+    }
+
+    write(path, body) {
+      const self = this;
+      this._writeDepth += 1;
+      this.lastOwnWriteAt = Date.now();
+      if (this._writeDepth === 1) this._emitBusy();
+      return _fetch(this.ctx.root + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Side-Cart": "1" },
+        body: JSON.stringify(body),
+      }).then(function (res) { return res.ok ? res.json() : null; })
+        .catch(function () { return null; })
+        .finally(function () {
+          self._writeDepth -= 1;
+          if (self._writeDepth === 0) self._emitBusy();
+        });
+    }
+
+    fetchProduct(handle) {
+      return _fetch(this.ctx.root + "products/" + handle + ".js", { headers: { "X-Side-Cart": "1" } })
+        .then(function (res) {
+          if (!res.ok) throw new Error("product fetch " + res.status);
+          return res.json();
+        });
+    }
+
+    _emitBusy() {
+      this.dispatchEvent(new CustomEvent("sc:busy", { detail: { busy: this.busy } }));
+    }
+
+    _checkFreeGift() {
+      const self = this;
+      if (this._freeGiftBusy || !this.cart) return;
+      const giftRules = progressRules(this.spec).filter(function (rule) {
+        return rule.type === "FREE_GIFT" && rule.product;
+      });
+      if (!giftRules.length) return;
+      const total = progressTotal(this.spec, this.cart);
+      giftRules.forEach(function (rule) {
+        const giftVariantId = numericIdFromGid(rule.product.variantId);
+        if (!giftVariantId) return;
+        const giftLineIndex = self.cart.items.findIndex(function (line) {
+          return line.variant_id === giftVariantId && line.properties && line.properties._sc_gift;
+        });
+        const threshold = ruleThreshold(self.spec, rule);
+        if (total >= threshold && giftLineIndex === -1) {
+          self._freeGiftBusy = true;
+          self.write("cart/add.js", {
+            items: [{ id: giftVariantId, quantity: 1, properties: { _sc_gift: "true" } }],
+          }).then(function (added) {
+            self._freeGiftBusy = false;
+            if (added) self.refresh();   // state now matches → next check is a no-op
+          });
+        } else if (total < threshold && giftLineIndex !== -1) {
+          self._freeGiftBusy = true;
+          self.write("cart/change.js", { line: giftLineIndex + 1, quantity: 0 })
+            .then(function (nextCart) {
+              self._freeGiftBusy = false;
+              if (nextCart) self.setCart(nextCart);
+            });
+        }
+      });
+    }
+
+    _syncCartCount() {
+      const count = this.cart ? this.cart.item_count : 0;
+      COUNT_SYNC_TARGETS.forEach(function (target) {
+        document.querySelectorAll(target.selector).forEach(function (el) {
+          try { COUNT_SYNC_APPLIERS[target.type](el, count, target); } catch (syncError) { /* one bad target must not stop the rest */ }
+        });
+      });
+    }
+  }
+
+  /* ---------- §4 blocks — Template Method base + Registry/Factory (OCP) ---------- */
+  class SideCartBlock extends HTMLElement {
+    static showsWhenEmpty = false;
+
+    connectedCallback() {
+      const self = this;
+      this._onUpdate = function () { self.update(); };
+      this.store.addEventListener("sc:update", this._onUpdate);
+      if (this.config && this.config.style) this.style.cssText = styleVars(this.config.style);
+      this._wire("click"); this._wire("change"); this._wire("keydown");
+      this._wire("blur", true);   // blur doesn't bubble — capture phase
+      this.update();
+      this.mounted();
+    }
+
+    disconnectedCallback() {
+      this.store.removeEventListener("sc:update", this._onUpdate);
+      this.unmounted();
+    }
+
+    update() {
+      let html = "";
+      try {
+        this.beforeRender();
+        const cart = this.store.cart;
+        const emptyCart = !cart || !cart.items || cart.items.length === 0;
+        if (!emptyCart || this.constructor.showsWhenEmpty) html = this.template(cart) || "";
+      } catch (err) { html = ""; }               // a broken block never breaks the drawer
+      morph(this, html);
+      this.updated();
+    }
+
+    get props() { return (this.config && this.config.props) || {}; }
+
+    /* hooks for subclasses */
+    template() { return ""; }
+    beforeRender() {} updated() {} mounted() {} unmounted() {}
+    get actions() { return {}; }
+
+    _wire(kind, capture) {
+      const self = this;
+      this.addEventListener(kind, function (event) {
+        const handlers = self.actions[kind];
+        if (!handlers) return;
+        const target = event.target.closest ? event.target.closest("[data-action]") : null;
+        if (!target || !self.contains(target)) return;
+        const fn = handlers[target.dataset.action];
+        if (fn) fn.call(self, target, event);
+      }, !!capture);
+    }
+
+    requestClose() {
+      this.dispatchEvent(new CustomEvent("sc:close-request", { bubbles: true, composed: true }));
+    }
+  }
+
+  const BLOCK_ELEMENTS = {
+    TOP_BAR: "sc-top-bar", TIMER: "sc-timer", PROGRESS_BAR: "sc-progress-bar",
+    PRODUCTS_IN_CART: "sc-products", DISCOUNT_CODE: "sc-discount-code",
+    ORDER_NOTES: "sc-order-notes", SUBTOTAL: "sc-subtotal",
+    CHECKOUT_BUTTON: "sc-checkout-button", TRUST_BADGES: "sc-trust-badges",
+    PAYMENT_METHODS: "sc-payment-methods",
+  };
+
+  function defineBlocks(classes) {   // classes: { "sc-top-bar": ScTopBar, ... } built at boot
+    Object.keys(classes).forEach(function (tag) {
+      if (!customElements.get(tag)) customElements.define(tag, classes[tag]);
     });
   }
 
-  function setCart(next) {
-    if (!next) return;                 // fetch failed → keep last good cart
-    cart = next;
-    window.__sideCartLast = next;      // the add-diff (Task 4) depends on this
-    trackUnlockCrossings();
-    maybeResetTimerOnAdd();
-    checkFreeGift();
-    render();
-    document.dispatchEvent(new CustomEvent("side-cart:updated", { detail: { cart: cart } }));
+  function createBlock(type, config, store) {
+    const tag = BLOCK_ELEMENTS[type];
+    if (!tag || !customElements.get(tag)) return null;   // unknown type → fail-closed
+    const el = document.createElement(tag);
+    el.store = store;
+    el.config = config;
+    el.classList.add("sc-block", "sc-blk-" + type);
+    return el;
   }
 
-  function refreshCart() {
-    return getCart().then(setCart);
-  }
-
-  /* §3 products + writes */
-  // dim + disable the checkout and apply-discount buttons while any of OUR writes is
-  // in flight (Kaching-style "cart is updating"); driven purely by pausedWriteDepth
-  function reflectBusy() {
-    const drawer = $("side-cart");
-    if (drawer) drawer.classList.toggle("sc-busy", pausedWriteDepth > 0);
-  }
-
-  function pausedWrite(path, body) {
-    pausedWriteDepth += 1;
-    lastOwnWriteAt = Date.now();   // so the PerformanceObserver net (§4) ignores our own writes
-    reflectBusy();
-    return _fetch(ctx.root + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Side-Cart": "1" },
-      body: JSON.stringify(body),
-    }).then(function (res) {
-      return res.ok ? res.json() : null;
-    }).catch(function () {
-      return null;
-    }).finally(function () {
-      pausedWriteDepth -= 1;
-      reflectBusy();
-    });
-  }
-
-  function changeQty(line, qty) {
-    return pausedWrite("cart/change.js", { line: Number(line), quantity: Math.max(0, Number(qty)) })
-      .then(function (next) { next ? setCart(next) : refreshCart(); });
-  }
-
-  const TRASH_ICON =
-    '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
-    '<path d="M14 3h-3.53a3.07 3.07 0 00-.6-1.65C9.44.82 8.8.5 8 .5s-1.44.32-1.87.85A3.06 3.06 0 005.53 3H2a.5.5 0 000 1h1.25v10c0 .28.22.5.5.5h8.5a.5.5 0 00.5-.5V4H14a.5.5 0 000-1zM6.91 1.98c.23-.29.58-.48 1.09-.48s.85.19 1.09.48c.2.24.3.6.36 1.02h-2.9c.05-.42.17-.78.36-1.02zm4.84 11.52h-7.5V4h7.5v9.5z"/>' +
-    '<path d="M6.55 5.25a.5.5 0 00-.5.5v6a.5.5 0 001 0v-6a.5.5 0 00-.5-.5zM9.45 5.25a.5.5 0 00-.5.5v6a.5.5 0 001 0v-6a.5.5 0 00-.5-.5z"/></svg>';
-  const TAG_ICON =
-    '<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">' +
-    '<path fill-rule="evenodd" clip-rule="evenodd" d="M7 0h3a2 2 0 012 2v3a1 1 0 01-.3.7l-6 6a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4l6-6A1 1 0 017 0zm2 2a1 1 0 102 0 1 1 0 00-2 0z"/></svg>';
-  const BAG_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>' +
-    '<path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
-
-  function lineHtml(item, line, blockProps) {
-    const gift = item.properties && item.properties._sc_gift;
-    const img = item.image
-      ? '<img class="sc-img" src="' + esc(item.image) + '" alt="" loading="lazy">'
-      : '<span class="sc-img"></span>';
-
-    const qtyStepper = !gift && blockProps.showQuantitySelector
-      ? '<span class="sc-qty">' +
-        '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity - 1) + '" aria-label="Decrease">−</button>' +
-        '<input class="sc-qty-val" type="number" inputmode="numeric" min="0" step="1" value="' + item.quantity +
-        '" data-qty-input data-line="' + line + '" aria-label="Quantity">' +
-        '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity + 1) + '" aria-label="Increase">+</button>' +
-        "</span>"
-      : "";
-    const controls = gift ? "" : '<div class="sc-controls">' + variantHtml(item, blockProps) + qtyStepper + "</div>";
-
-    // line-level discount: struck-through original price + green "You save X%" pill
-    const lineDiscounted = !gift && item.original_line_price > item.final_line_price;
-    const savedPercent = lineDiscounted
-      ? Math.round(((item.original_line_price - item.final_line_price) / item.original_line_price) * 100)
-      : 0;
-    const savePill = savedPercent > 0
-      ? '<span class="sc-save">' + TAG_ICON + " You save " + savedPercent + "%</span>"
-      : "";
-
-    let price;
-    if (gift) {
-      price = '<span class="sc-badge">FREE</span>';
-    } else {
-      const shownPrice = blockProps.showSingleItemPrice ? item.final_price : item.final_line_price;
-      const wasPrice = blockProps.showSingleItemPrice ? item.original_price : item.original_line_price;
-      price = (lineDiscounted ? '<s class="sc-price-was">' + money(wasPrice) + "</s>" : "") +
-        '<span class="sc-price">' + money(shownPrice) + "</span>";
+  class ScTopBar extends SideCartBlock {
+    static showsWhenEmpty = true;
+    template(cart) {
+      const count = this.props.showItemCount && cart
+        ? ' <span class="sc-count">• ' + cart.item_count + "</span>" : "";
+      return '<div class="sc-topbar"><span class="sc-title">' + esc(this.props.title) + count +
+        '</span><button class="sc-close" data-action="close" aria-label="Close">✕</button></div>';
     }
-    const remove = gift ? ""
-      : '<button class="sc-remove" data-action="remove" data-line="' + line + '" aria-label="Remove">' + TRASH_ICON + "</button>";
-
-    const titleHtml = item.url
-      ? '<a class="sc-line-title" href="' + esc(item.url) + '">' + esc(item.product_title) + "</a>"
-      : '<span class="sc-line-title">' + esc(item.product_title) + "</span>";
-
-    return '<li class="sc-line">' + img +
-      '<div class="sc-line-main">' + titleHtml +
-      controls + "</div>" +
-      '<div class="sc-line-side">' + price + savePill + remove + "</div></li>";
+    get actions() { return { click: { close: function () { this.requestClose(); } } }; }
   }
 
-  function PRODUCTS_IN_CART(block) {
-    const p = block.props || {};
-    if (!cart || !cart.items || !cart.items.length) {
-      return '<div class="sc-empty">' + BAG_ICON +
-        '<span>' + esc(p.emptyText || "Your cart is empty.") + "</span></div>";
+  class ScSubtotal extends SideCartBlock {
+    template(cart) {
+      if (!cart) return "";
+      const discountRows = collectDiscounts(cart).map(function (d) {
+        return '<div class="sc-disc-line"><span class="sc-disc-label">Discounts</span>' +
+          '<span class="sc-disc-chip">' + TAG_ICON + " " + esc(d.title) + "</span>" +
+          '<span class="sc-disc-amt">-' + money(d.amount) + "</span></div>";
+      }).join("");
+      const original = this.props.showOriginalPrice && cart.original_total_price > cart.total_price
+        ? '<s class="sc-original">' + money(cart.original_total_price) + "</s>" : "";
+      return '<div class="sc-summary">' + discountRows +
+        '<div class="sc-subtotal"><span>' + esc(this.props.title) + "</span><span>" + original +
+        '<span class="sc-discounted">' + money(cart.total_price) + "</span></span></div></div>";
     }
-    return '<ul class="sc-lines">' + cart.items.map(function (item, i) {
-      return lineHtml(item, i + 1, p);
-    }).join("") + "</ul>";
   }
 
-  /* §4 detect — network interception. THE CONTRACT: the real request ALWAYS runs
-     untouched; only our reaction is conditional; any error degrades to passthrough. */
+  class ScCheckoutButton extends SideCartBlock {
+    template(cart) {
+      const title = esc(this.props.title || "").replace(/\{\{\s*cart_total\s*\}\}/g,
+        esc(money(cart ? cart.total_price : 0)));
+      return '<button class="sc-checkout" data-action="checkout">' + title + "</button>" +
+        '<button class="sc-continue" data-action="close">continue shopping</button>';
+    }
+    get actions() {
+      return { click: {
+        checkout: function () { location.href = this.store.ctx.checkoutUrl || "/checkout"; },
+        close: function () { this.requestClose(); },
+      } };
+    }
+  }
+
+  class ScTrustBadges extends SideCartBlock {
+    template() {
+      const badges = this.props.badges || [];
+      if (!badges.length) return "";
+      return '<div class="sc-trust">' + badges.map(function (b) {
+        return "<span>" + esc(b.title) + "</span>";
+      }).join("") + "</div>";
+    }
+  }
+
+  class ScPaymentMethods extends SideCartBlock {
+    template() {
+      const icons = this.props.icons || [];
+      if (!icons.length) return "";
+      return '<div class="sc-pay">' + icons.map(function (label) {
+        return "<span>" + esc(label) + "</span>";
+      }).join("") + "</div>";
+    }
+  }
+
+  class ScTimer extends SideCartBlock {
+    template() {
+      const deadline = readTimerDeadline();
+      if (!deadline || Date.now() >= deadline) return "";        // renders nothing past expiry
+      const titleHtml = esc(this.props.title).replace(/\{\{\s*timer\s*\}\}/g,
+        '<span data-sc-timer>' + this._timerText() + "</span>"); // esc FIRST, then splice span
+      return '<div class="sc-timer">' + titleHtml + "</div>";
+    }
+
+    mounted() {
+      const self = this;
+      this._prevCount = null;
+      this._expiryHandled = false;
+      if (!readTimerDeadline()) stampFreshDeadline(this.props);
+      this._interval = setInterval(function () { self._tick(); }, 1000);   // ONE interval app-wide
+    }
+
+    unmounted() { clearInterval(this._interval); }
+
+    updated() {   // runs after every morph — reset-on-add (v1 maybeResetTimerOnAdd)
+      const count = this.store.cart ? this.store.cart.item_count : 0;
+      if (this.props.resetTimerProductAddedToCart && this._prevCount != null && count > this._prevCount) {
+        stampFreshDeadline(this.props);
+        this._expiryHandled = false;
+      }
+      this._prevCount = count;
+    }
+
+    _timerText() {   // v1 timerText verbatim
+      const deadline = readTimerDeadline();
+      if (!deadline) return "";
+      const msLeft = Math.max(0, deadline - Date.now());
+      const minutes = String(Math.floor(msLeft / 60000)).padStart(2, "0");
+      const seconds = String(Math.floor((msLeft % 60000) / 1000)).padStart(2, "0");
+      return minutes + ":" + seconds;
+    }
+
+    _tick() {   // v1 onTimerTick semantics: touch ONE span; expiry handled once
+      const span = this.querySelector("[data-sc-timer]");
+      if (span) span.textContent = this._timerText();
+      const deadline = readTimerDeadline();
+      if (deadline && Date.now() >= deadline && !this._expiryHandled) {
+        this._expiryHandled = true;
+        const self = this;
+        if (this.props.removeCartItemsTimerEnds && this.store.cart && this.store.cart.item_count > 0) {
+          this.store.write("cart/clear.js", {}).then(function (cleared) {
+            if (cleared) self.store.setCart(cleared);
+          });
+        } else {
+          this.update();   // morph removes the band
+        }
+      }
+    }
+  }
+
+  class ScProgressBar extends SideCartBlock {
+    constructor() {
+      super();
+      this._prevTotal = 0;
+      this._flash = null;   // { label, expiresAt }
+    }
+
+    beforeRender() {   // v1 trackUnlockCrossings, local to the element
+      const rules = progressRules(this.store.spec);
+      if (!rules.length) return;
+      const total = progressTotal(this.store.spec, this.store.cart);
+      const self = this;
+      const crossed = rules.find(function (rule) {
+        const threshold = ruleThreshold(self.store.spec, rule);
+        return self._prevTotal < threshold && total >= threshold;
+      });
+      this._prevTotal = total;
+      if (crossed) {
+        this._flash = { label: crossed.label, expiresAt: Date.now() + 3000 };
+        setTimeout(function () { self._flash = null; self.update(); }, 3000);
+      }
+    }
+
+    template(cart) {
+      const theSpec = this.store.spec;
+      const rules = progressRules(theSpec);
+      if (!rules.length || !cart) return "";
+      const props = this.props;
+      const total = progressTotal(theSpec, cart);
+      const count = rules.length;
+      const thresholds = rules.map(function (rule) { return ruleThreshold(theSpec, rule); });
+      const fillPercent = segmentedFillPercent(total, thresholds);
+      const nextRule = rules.find(function (rule, i) { return total < thresholds[i]; });
+
+      let messageTemplate;
+      if (!nextRule) messageTemplate = props.allUnlockedText;
+      else if (this._flash && Date.now() < this._flash.expiresAt) messageTemplate = props.unlockedText;
+      else messageTemplate = props.defaultText;
+      const nextIndex = rules.indexOf(nextRule);
+      const needed = nextRule ? thresholds[nextIndex] - total : 0;
+      const neededText = progressBlockOf(theSpec).props.unlockedBy === "QUANTITY" ? String(needed) : money(needed);
+      const message = esc(messageTemplate)
+        .replace(/\{\{\s*needed\s*\}\}/g, esc(neededText))
+        .replace(/\{\{\s*next\s*\}\}/g, nextRule ? esc(nextRule.label) : "—")
+        .replace(/\{\{\s*unlocked\s*\}\}/g, this._flash ? esc(this._flash.label) : "—");
+
+      function markerPct(i) { return ((i + 1) / count) * 100; }
+      function edgeShift(i) { return i === count - 1 ? "-100%" : "-50%"; }
+      const markers = rules.map(function (rule, i) {
+        const reached = total >= thresholds[i];
+        return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
+          '" style="left:' + markerPct(i) + "%;transform:translate(" + edgeShift(i) + ',-50%)"></span>';
+      }).join("");
+      const labels = rules.map(function (rule, i) {
+        const reached = total >= thresholds[i];
+        return '<span class="sc-ms-label' + (reached ? " sc-done" : "") +
+          '" style="left:' + markerPct(i) + "%;transform:translateX(" + edgeShift(i) + ')">' +
+          esc(rule.label) + "</span>";
+      }).join("");
+
+      // NOTE: no data-pct / double-rAF needed in v2 — morph updates the style attribute on
+      // the PERSISTENT .sc-fill element, so the CSS width transition animates naturally.
+      return '<div class="sc-progress"><p class="sc-progress-text">' + message +
+        '</p><div class="sc-track"><div class="sc-fill" style="width:' + fillPercent + '%"></div>' +
+        markers + '</div><div class="sc-ms-labels">' + labels + "</div></div>";
+    }
+  }
+
+  class ScProducts extends SideCartBlock {
+    static showsWhenEmpty = true;
+
+    constructor() {
+      super();
+      this._productCache = new Map();   // handle → { status: "pending"|"ok"|"error", data }
+    }
+
+    template(cart) {
+      const props = this.props;
+      if (!cart || !cart.items || !cart.items.length) {
+        return '<div class="sc-empty">' + BAG_ICON +
+          "<span>" + esc(props.emptyText || "Your cart is empty.") + "</span></div>";
+      }
+      const self = this;
+      return '<ul class="sc-lines">' + cart.items.map(function (item, i) {
+        return self._lineHtml(item, i + 1, props);
+      }).join("") + "</ul>";
+    }
+
+    _lineHtml(item, line, props) {
+      const gift = item.properties && item.properties._sc_gift;
+      const img = item.image
+        ? '<img class="sc-img" src="' + esc(item.image) + '" alt="" loading="lazy">'
+        : '<span class="sc-img"></span>';
+
+      const qtyStepper = !gift && props.showQuantitySelector
+        ? '<span class="sc-qty">' +
+          '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity - 1) + '" aria-label="Decrease">−</button>' +
+          '<input class="sc-qty-val" type="number" inputmode="numeric" min="0" step="1" value="' + item.quantity +
+          '" data-sync-value data-action="qty-input" data-line="' + line + '" aria-label="Quantity">' +
+          '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity + 1) + '" aria-label="Increase">+</button>' +
+          "</span>"
+        : "";
+      const controls = gift ? "" : '<div class="sc-controls">' + this._variantHtml(item, props) + qtyStepper + "</div>";
+
+      // line-level discount: struck-through original price + green "You save X%" pill
+      const lineDiscounted = !gift && item.original_line_price > item.final_line_price;
+      const savedPercent = lineDiscounted
+        ? Math.round(((item.original_line_price - item.final_line_price) / item.original_line_price) * 100)
+        : 0;
+      const savePill = savedPercent > 0
+        ? '<span class="sc-save">' + TAG_ICON + " You save " + savedPercent + "%</span>"
+        : "";
+
+      let price;
+      if (gift) {
+        price = '<span class="sc-badge">FREE</span>';
+      } else {
+        const shownPrice = props.showSingleItemPrice ? item.final_price : item.final_line_price;
+        const wasPrice = props.showSingleItemPrice ? item.original_price : item.original_line_price;
+        price = '<div class="sc-prices">' +
+          (lineDiscounted ? '<s class="sc-price-was">' + money(wasPrice) + "</s>" : "") +
+          '<span class="sc-price">' + money(shownPrice) + "</span></div>";
+      }
+      const remove = gift ? ""
+        : '<button class="sc-remove" data-action="remove" data-line="' + line + '" aria-label="Remove">' + TRASH_ICON + "</button>";
+
+      const titleHtml = item.url
+        ? '<a class="sc-line-title" href="' + esc(item.url) + '">' + esc(item.product_title) + "</a>"
+        : '<span class="sc-line-title">' + esc(item.product_title) + "</span>";
+
+      return '<li class="sc-line" data-key="' + esc(item.key) + '">' + img +
+        '<div class="sc-line-main">' + titleHtml +
+        controls + "</div>" +
+        '<div class="sc-line-side">' + price + savePill + remove + "</div></li>";
+    }
+
+    _variantHtml(item, props) {
+      if (!props.showVariantSelector) return "";
+      // single-variant products (Shopify's default "Default Title" variant) have no real
+      // options — show neither a label nor a picker
+      if (item.product_has_only_default_variant || !item.variant_title) return "";
+      const isGiftLine = item.properties && item.properties._sc_gift;
+      const staticLabel = '<span class="sc-variant">' + esc(item.variant_title) + "</span>";
+      if (isGiftLine) return staticLabel;
+      const cached = this._productCache.get(item.handle);
+      if (!cached) { this._ensureProductLoaded(item.handle); return staticLabel; }
+      if (cached.status !== "ok" || !Array.isArray(cached.data.variants) ||
+          cached.data.variants.length < 2) return "";   // only one real variant → no picker
+      const options = cached.data.variants.map(function (variant) {
+        return '<option value="' + variant.id + '"' +
+          (variant.id === item.variant_id ? " selected" : "") +
+          (variant.available ? "" : " disabled") + ">" + esc(variant.title) + "</option>";
+      }).join("");
+      return '<select class="sc-variant-select" data-action="variant" ' +
+        'data-old-variant="' + item.variant_id + '" data-line-qty="' + item.quantity + '">' +
+        options + "</select>";
+    }
+
+    _ensureProductLoaded(handle) {
+      if (!handle || this._productCache.has(handle)) return;
+      this._productCache.set(handle, { status: "pending" });
+      const self = this;
+      this.store.fetchProduct(handle)
+        .then(function (data) { self._productCache.set(handle, { status: "ok", data: data }); self.update(); })
+        .catch(function () { self._productCache.set(handle, { status: "error" }); });
+    }
+
+    _changeQty(line, qty) {
+      const self = this;
+      return this.store.write("cart/change.js", { line: Number(line), quantity: Math.max(0, qty) })
+        .then(function (next) { next ? self.store.setCart(next) : self.store.refresh(); });
+    }
+
+    _swapVariant(oldVariantId, newVariantId, lineQuantity) {
+      if (!oldVariantId || !newVariantId || oldVariantId === newVariantId) return Promise.resolve();
+      // cart/update.js `updates` sets ABSOLUTE quantities per variant. If the target variant
+      // is already in the cart, we must merge — set it to its existing qty + the swapped qty —
+      // otherwise the existing line's quantity is overwritten (e.g. swap Navy→Black with a
+      // Black already present would drop Black back to 1 instead of 2).
+      let existingTargetQty = 0;
+      const self = this;
+      ((this.store.cart && this.store.cart.items) || []).forEach(function (line) {
+        const isGift = line.properties && line.properties._sc_gift;
+        if (line.variant_id === newVariantId && !isGift) existingTargetQty += line.quantity;
+      });
+      const updates = {};
+      updates[oldVariantId] = 0;
+      updates[newVariantId] = existingTargetQty + lineQuantity;
+      return this.store.write("cart/update.js", { updates: updates })
+        .then(function (nextCart) { nextCart ? self.store.setCart(nextCart) : self.store.refresh(); });
+    }
+
+    get actions() {
+      return {
+        click: {
+          qty: function (target) {
+            const stepper = target.closest(".sc-qty");
+            if (stepper) stepper.classList.add("sc-loading");
+            this._changeQty(target.dataset.line, Number(target.dataset.qty));
+          },
+          remove: function (target) {
+            target.classList.add("sc-loading");
+            this._changeQty(target.dataset.line, 0);
+          },
+        },
+        change: {
+          "qty-input": function (target) {
+            const stepper = target.closest(".sc-qty");
+            if (stepper) stepper.classList.add("sc-loading");
+            this._changeQty(target.dataset.line, parseInt(target.value, 10) || 0);
+          },
+          variant: function (target) {
+            this._swapVariant(Number(target.dataset.oldVariant), Number(target.value),
+              Number(target.dataset.lineQty));
+          },
+        },
+        keydown: {
+          "qty-input": function (target, event) {
+            if (event.key === "Enter") { event.preventDefault(); target.blur(); }
+          },
+        },
+      };
+    }
+  }
+
+  class ScDiscountCode extends SideCartBlock {
+    template(cart) {
+      const props = this.props;
+      const chips = ((cart && cart.discount_codes) || [])
+        .filter(function (d) { return d.applicable !== false; })
+        .map(function (d) {
+          return '<span class="sc-chip">' + esc(d.code) +
+            '<button data-action="remove-discount" aria-label="Remove discount">✕</button></span>';
+        }).join("");
+      // NOTE: input has NO data-sync-value — morph preserves typed-but-unapplied text
+      return '<div class="sc-discount"><div class="sc-disc-row">' +
+        '<input id="sc-disc-input" type="text" placeholder="' + esc(props.placeholderTitle) + '">' +
+        '<button class="sc-apply" data-action="apply-discount">' + esc(props.buttonText) + "</button>" +
+        '</div><div class="sc-chips">' + chips + "</div></div>";
+    }
+
+    _applyDiscount(code) {
+      const self = this;
+      return this.store.write("cart/update.js", { discount: code || "" })
+        .then(function (next) { next ? self.store.setCart(next) : self.store.refresh(); });
+    }
+
+    get actions() {
+      return { click: {
+        "apply-discount": function () {
+          const input = this.querySelector("#sc-disc-input");
+          const code = input && input.value.trim();
+          if (!code) return;
+          input.value = "";                       // clear synchronously (v1 fix preserved)
+          this._applyDiscount(code);
+        },
+        "remove-discount": function () { this._applyDiscount(""); },
+      } };
+    }
+  }
+
+  class ScOrderNotes extends SideCartBlock {
+    constructor() { super(); this._open = false; }
+
+    template(cart) {
+      const props = this.props;
+      // textarea: NO data-sync-value — typed note text survives morphs until saved
+      const textarea = this._open
+        ? '<textarea id="sc-notes" data-action="note" placeholder="' + esc(props.textAreaPlaceholder) + '">' +
+          esc((cart && cart.note) || "") + "</textarea>"
+        : "";
+      return '<div class="sc-notes"><button class="sc-notes-toggle" data-action="toggle-notes">' +
+        esc(props.title) + " " + (this._open ? "▴" : "▾") + "</button>" + textarea + "</div>";
+    }
+
+    get actions() {
+      return {
+        click: { "toggle-notes": function () { this._open = !this._open; this.update(); } },
+        blur: { note: function (target) { this.store.write("cart/update.js", { note: target.value }); } },
+      };
+    }
+  }
+
+  /* ---------- §5 detect — v1 logic verbatim, repackaged (contracts unchanged) ---------- */
+  /* THE CONTRACT: the real request ALWAYS runs untouched; only our reaction is
+     conditional; any error degrades to passthrough. */
 
   const ENDPOINT_MATCHERS = {                 // add endpoints here, never edit evaluate()
     add:    /\/cart\/add(\.js)?(\?|$)/,
@@ -476,16 +954,138 @@
     return Object.keys(headers).some(function (key) { return key.toLowerCase() === "x-side-cart"; });
   }
 
-  // Every guard is load-bearing (spec §4.1). A guard returning true VETOES the
-  // reaction. Extend by adding entries — evaluate() never changes.
-  const INTERCEPT_GUARDS = [
-    { name: "own-request",       vetoes: function (requestInfo) { return requestHasOurHeader(requestInfo.headers); } },
-    { name: "interceptor-paused", vetoes: function () { return interceptorIsPaused(); } },
-    { name: "explicit-ignore",   vetoes: function (requestInfo) { return /[?&]side_cart_ignore=true/.test(requestInfo.url); } },
-    { name: "other-app-ocu",     vetoes: function (requestInfo) { return /[?&]ocu=/.test(requestInfo.url); } },
-  ];
-
   function urlNeverOpensDrawer(url) { return /[?&]opens_cart=never/.test(url); }
+
+  class CartInterceptor {
+    constructor(store, openDrawer) { this.store = store; this.openDrawer = openDrawer; }
+
+    start() { this._patchFetch(); this._patchXhr(); }
+
+    // Every guard is load-bearing (spec §4.1). A guard returning true VETOES the
+    // reaction. Extend by adding entries — evaluate() never changes. Built per-instance
+    // (not module level) so "interceptor-paused" can close over THIS store's busy flag.
+    _guards() {
+      if (!this._guardList) {
+        const self = this;
+        this._guardList = [
+          { name: "own-request",        vetoes: function (requestInfo) { return requestHasOurHeader(requestInfo.headers); } },
+          { name: "interceptor-paused", vetoes: function () { return self.store.busy; } },
+          { name: "explicit-ignore",    vetoes: function (requestInfo) { return /[?&]side_cart_ignore=true/.test(requestInfo.url); } },
+          { name: "other-app-ocu",      vetoes: function (requestInfo) { return /[?&]ocu=/.test(requestInfo.url); } },
+        ];
+      }
+      return this._guardList;
+    }
+
+    _guardsVeto(requestInfo) {
+      return this._guards().some(function (g) {
+        try { return g.vetoes(requestInfo); } catch (e) { return false; }
+      });
+    }
+
+    // → null (ignore) or { endpoint, neverOpen }
+    _evaluate(requestInfo) {
+      if (String(requestInfo.method || "GET").toUpperCase() !== "POST") return Promise.resolve(null);
+      const endpoint = classifyEndpoint(requestInfo.url);
+      if (!endpoint) return Promise.resolve(null);
+      if (this._guardsVeto(requestInfo)) return Promise.resolve(null);
+      return parseRequestBody(requestInfo.body, requestInfo.headers).then(function (bodyData) {
+        if (!ENDPOINT_PREDICATES[endpoint](bodyData)) return null;
+        return { endpoint: endpoint, neverOpen: urlNeverOpensDrawer(requestInfo.url) };
+      });
+    }
+
+    _react(requestInfo, response) {
+      const self = this;
+      this._evaluate(requestInfo).then(function (verdict) {
+        if (verdict) return self._handleMutation(response.clone(), verdict);
+      }).catch(function () {});
+    }
+
+    _handleMutation(response, verdict) {
+      const self = this;
+      try {
+        if (!response.ok) return Promise.resolve();
+        this.store.lastCartReactionAt = Date.now();   // tells the PO net (§5) this add is already handled
+        const onCartPage = /\/cart\/?$/.test(location.pathname);
+        if (!verdict.neverOpen && !onCartPage) this.openDrawer();
+        let diffDone = Promise.resolve();
+        if (verdict.endpoint === "add") {
+          diffDone = response.json().then(function (addResponseData) {
+            const addedItems = Array.isArray(addResponseData) ? addResponseData
+              : Array.isArray(addResponseData.items) ? addResponseData.items
+              : [addResponseData];
+            const previousCart = window.__sideCartLast;
+            addedItems.forEach(function (addedItem) {
+              if (!addedItem || addedItem.variant_id == null) return;
+              const previousLine = previousCart && previousCart.items && previousCart.items.find(
+                function (line) { return line.variant_id === addedItem.variant_id; });
+              const quantityAdded = addedItem.quantity - (previousLine ? previousLine.quantity : 0);
+              if (quantityAdded > 0) {
+                document.dispatchEvent(new CustomEvent("side-cart:item-added", {
+                  detail: { item: addedItem, quantityAdded: quantityAdded },
+                }));
+              }
+            });
+          }).catch(function () {});
+        }
+        return diffDone.then(function () { return self.store.refresh(); });   // stashes __sideCartLast for the NEXT diff
+      } catch (reactionError) { return Promise.resolve(); } // never throw into theme code
+    }
+
+    _patchFetch() {
+      const self = this;
+      window.fetch = function (input, init) {
+        const realRequest = _fetch(input, init);            // ALWAYS runs, untouched
+        try {
+          const requestInfo = {
+            url: typeof input === "string" ? input : (input && input.url) || "",
+            method: (init && init.method) || (input && input.method) || "GET",
+            headers: (init && init.headers) || (input && input.headers) || null,
+            body: (init && init.body) ||
+              (typeof Request !== "undefined" && input instanceof Request ? input.clone().body : null),
+          };
+          realRequest.then(function (response) { self._react(requestInfo, response); })
+                     .catch(function () {});
+        } catch (interceptError) { /* degrade to passthrough */ }
+        return realRequest;
+      };
+    }
+
+    _patchXhr() {
+      const self = this;
+      const xhrProto = window.XMLHttpRequest.prototype;
+      const originalOpen = xhrProto.open, originalSend = xhrProto.send,
+          originalSetHeader = xhrProto.setRequestHeader;
+      xhrProto.open = function (method, url) {
+        try { this._sideCart = { method: method, url: String(url), headers: {} }; } catch (e) { /* instrumentation only; degrade to passthrough */ }
+        return originalOpen.apply(this, arguments);
+      };
+      xhrProto.setRequestHeader = function (name, value) {
+        try { if (this._sideCart) this._sideCart.headers[name] = value; } catch (e) { /* instrumentation only; degrade to passthrough */ }
+        return originalSetHeader.apply(this, arguments);
+      };
+      xhrProto.send = function (body) {
+        try {
+          if (this._sideCart) {
+            this._sideCart.body = body;
+            const xhr = this;
+            xhr.addEventListener("load", function () {
+              const responseLike = {
+                ok: xhr.status >= 200 && xhr.status < 300,
+                json: function () {
+                  return Promise.resolve().then(function () { return JSON.parse(xhr.responseText); });
+                },
+                clone: function () { return responseLike; },
+              };
+              self._react(xhr._sideCart, responseLike);
+            });
+          }
+        } catch (interceptError) { /* degrade to passthrough */ }
+        return originalSend.apply(this, arguments);
+      };
+    }
+  }
 
   /* PerformanceObserver safety net. Request interception is primary (it alone can read
      the add response body for the item-added diff), but a theme or app that dispatches
@@ -493,148 +1093,36 @@
      window.fetch would bypass interception entirely. The resource-timing observer sees
      every /cart/* request regardless of HOW it was dispatched, so it catches those adds
      and still opens + refreshes the drawer. Two timestamps keep the paths from colliding:
-       · lastOwnWriteAt   — set by pausedWrite; the observer ignores OUR writes
-       · lastCartReactionAt — set by whichever path reacts first; the observer skips a
-                              mutation the interceptor already handled (no double reaction). */
-  let lastOwnWriteAt = 0;
-  let lastCartReactionAt = 0;
+       · store.lastOwnWriteAt      — set by store.write; the observer ignores OUR writes
+       · store.lastCartReactionAt  — set by whichever path reacts first; the observer skips
+                                      a mutation the interceptor already handled (no double
+                                      reaction). */
+  class CartMutationObserverNet {
+    constructor(store, openDrawer) { this.store = store; this.openDrawer = openDrawer; }
 
-  function reactToCartMutationUrl(url) {
-    try {
-      if (!url || classifyEndpoint(url) == null) return;      // only add/change/update/clear
-      if (/[?&]side_cart_ignore=true/.test(url) || /[?&]ocu=/.test(url)) return;
-      const now = Date.now();
-      if (now - lastOwnWriteAt < 2500) return;                // our own drawer-driven write
-      if (now - lastCartReactionAt < 1200) return;            // interception already reacted
-      lastCartReactionAt = now;
-      if (!urlNeverOpensDrawer(url) && !/\/cart\/?$/.test(location.pathname)) openDrawer();
-      refreshCart();
-    } catch (reactionError) { /* never throw into theme code */ }
-  }
-
-  function installCartMutationObserver() {
-    if (typeof PerformanceObserver === "undefined") return;
-    try {
-      const observer = new PerformanceObserver(function (list) {
-        list.getEntries().forEach(function (entry) { reactToCartMutationUrl(entry.name); });
-      });
-      observer.observe({ type: "resource", buffered: false });
-    } catch (observerError) { /* PO unsupported → fetch/XHR interception remains primary */ }
-  }
-
-  // → null (ignore) or { endpoint, neverOpen }
-  function evaluateRequest(requestInfo) {
-    if (String(requestInfo.method || "GET").toUpperCase() !== "POST") return Promise.resolve(null);
-    const endpoint = classifyEndpoint(requestInfo.url);
-    if (!endpoint) return Promise.resolve(null);
-    const vetoed = INTERCEPT_GUARDS.some(function (guard) {
-      try { return guard.vetoes(requestInfo); } catch (guardError) { return false; }
-    });
-    if (vetoed) return Promise.resolve(null);
-    return parseRequestBody(requestInfo.body, requestInfo.headers).then(function (bodyData) {
-      if (!ENDPOINT_PREDICATES[endpoint](bodyData)) return null;
-      return { endpoint: endpoint, neverOpen: urlNeverOpensDrawer(requestInfo.url) };
-    });
-  }
-
-  function handleCartMutationResponse(response, verdict) {
-    try {
-      if (!response.ok) return Promise.resolve();
-      lastCartReactionAt = Date.now();   // tells the PerformanceObserver net (§4) this add is already handled
-      const onCartPage = /\/cart\/?$/.test(location.pathname);
-      if (!verdict.neverOpen && !onCartPage) openDrawer();
-      let diffDone = Promise.resolve();
-      if (verdict.endpoint === "add") {
-        diffDone = response.json().then(function (addResponseData) {
-          const addedItems = Array.isArray(addResponseData) ? addResponseData
-            : Array.isArray(addResponseData.items) ? addResponseData.items
-            : [addResponseData];
-          const previousCart = window.__sideCartLast;
-          addedItems.forEach(function (addedItem) {
-            if (!addedItem || addedItem.variant_id == null) return;
-            const previousLine = previousCart && previousCart.items && previousCart.items.find(
-              function (line) { return line.variant_id === addedItem.variant_id; });
-            const quantityAdded = addedItem.quantity - (previousLine ? previousLine.quantity : 0);
-            if (quantityAdded > 0) {
-              document.dispatchEvent(new CustomEvent("side-cart:item-added", {
-                detail: { item: addedItem, quantityAdded: quantityAdded },
-              }));
-            }
-          });
-        }).catch(function () {});
-      }
-      return diffDone.then(refreshCart);      // stashes __sideCartLast for the NEXT diff
-    } catch (reactionError) { return Promise.resolve(); } // never throw into theme code
-  }
-
-  function reactToResponse(requestInfo, response) {
-    evaluateRequest(requestInfo).then(function (verdict) {
-      if (verdict) return handleCartMutationResponse(response.clone(), verdict);
-    }).catch(function () {});
-  }
-
-  function installFetchInterceptor() {
-    window.fetch = function (input, init) {
-      const realRequest = _fetch(input, init);            // ALWAYS runs, untouched
+    start() {
+      if (typeof PerformanceObserver === "undefined") return;
+      const self = this;
       try {
-        const requestInfo = {
-          url: typeof input === "string" ? input : (input && input.url) || "",
-          method: (init && init.method) || (input && input.method) || "GET",
-          headers: (init && init.headers) || (input && input.headers) || null,
-          body: (init && init.body) ||
-            (typeof Request !== "undefined" && input instanceof Request ? input.clone().body : null),
-        };
-        realRequest.then(function (response) { reactToResponse(requestInfo, response); })
-                   .catch(function () {});
-      } catch (interceptError) { /* degrade to passthrough */ }
-      return realRequest;
-    };
-  }
+        const observer = new PerformanceObserver(function (list) {
+          list.getEntries().forEach(function (entry) { self._reactToCartMutationUrl(entry.name); });
+        });
+        observer.observe({ type: "resource", buffered: false });
+      } catch (observerError) { /* PO unsupported → fetch/XHR interception remains primary */ }
+    }
 
-  function installXhrInterceptor() {
-    const xhrProto = window.XMLHttpRequest.prototype;
-    const originalOpen = xhrProto.open, originalSend = xhrProto.send,
-        originalSetHeader = xhrProto.setRequestHeader;
-    xhrProto.open = function (method, url) {
-      try { this._sideCart = { method: method, url: String(url), headers: {} }; } catch (e) { /* instrumentation only; degrade to passthrough */ }
-      return originalOpen.apply(this, arguments);
-    };
-    xhrProto.setRequestHeader = function (name, value) {
-      try { if (this._sideCart) this._sideCart.headers[name] = value; } catch (e) { /* instrumentation only; degrade to passthrough */ }
-      return originalSetHeader.apply(this, arguments);
-    };
-    xhrProto.send = function (body) {
+    _reactToCartMutationUrl(url) {
       try {
-        if (this._sideCart) {
-          this._sideCart.body = body;
-          const xhr = this;
-          xhr.addEventListener("load", function () {
-            const responseLike = {
-              ok: xhr.status >= 200 && xhr.status < 300,
-              json: function () {
-                return Promise.resolve().then(function () { return JSON.parse(xhr.responseText); });
-              },
-              clone: function () { return responseLike; },
-            };
-            reactToResponse(xhr._sideCart, responseLike);
-          });
-        }
-      } catch (interceptError) { /* degrade to passthrough */ }
-      return originalSend.apply(this, arguments);
-    };
-  }
-
-  /* Click detector — the theme's cart icon opens OUR drawer. Extend the list per theme. */
-  const CART_LINK_SELECTORS =
-    'a[href$="/cart"], a[href*="/cart?"], a[href*="/cart#"], #cart-icon-bubble, ' +
-    '.header__icon--cart, [data-cart-icon], [data-drawer-toggle="cart"]';
-
-  function installCartIconClickDetector() {
-    document.addEventListener("click", function (event) {
-      if (event.target.closest("#sc-root")) return;      // never hijack clicks in OUR drawer
-      const cartLink = event.target.closest(CART_LINK_SELECTORS);
-      if (cartLink) { event.preventDefault(); event.stopPropagation(); openDrawer(); }
-    }, true);
+        if (!url || classifyEndpoint(url) == null) return;      // only add/change/update/clear
+        if (/[?&]side_cart_ignore=true/.test(url) || /[?&]ocu=/.test(url)) return;
+        const now = Date.now();
+        if (now - this.store.lastOwnWriteAt < 2500) return;      // our own drawer-driven write
+        if (now - this.store.lastCartReactionAt < 1200) return;  // interception already reacted
+        this.store.lastCartReactionAt = now;
+        if (!urlNeverOpensDrawer(url) && !/\/cart\/?$/.test(location.pathname)) this.openDrawer();
+        this.store.refresh();
+      } catch (reactionError) { /* never throw into theme code */ }
+    }
   }
 
   /* Native drawer suppression — three layers (hide / close / keep-shut). All lists
@@ -649,519 +1137,163 @@
     "overflow-hidden", "js-drawer-open", "t4s-lock-scroll", "cart-drawer-open",
   ];
 
-  function closeNativeCartElements() {
-    NATIVE_CART_SELECTORS.forEach(function (selector) {
-      document.querySelectorAll(selector).forEach(function (nativeEl) {
-        try {
-          if (typeof nativeEl.close === "function") nativeEl.close();
-          nativeEl.removeAttribute("open");
-          ["active", "is-open", "animate", "open"].forEach(function (cls) {
-            nativeEl.classList.remove(cls);
-          });
-          nativeEl.querySelectorAll(NATIVE_CLOSE_BUTTON_SELECTORS).forEach(function (closeButton) {
-            closeButton.click();   // themes that only close via their own button
-          });
-        } catch (closeError) { /* one drawer failing must not stop the rest */ }
-      });
-    });
-    SCROLL_LOCK_CLASSES.forEach(function (lockClass) {
-      document.body.classList.remove(lockClass);
-      document.documentElement.classList.remove(lockClass);
-    });
-  }
-
-  function disableNativeCart() {
-    // Layer 1 — hide: one stylesheet, every selector guarded so we never match ourselves
-    const hideStyle = document.createElement("style");
-    hideStyle.textContent = NATIVE_CART_SELECTORS.map(function (selector) {
-      return selector + ":not(#side-cart){display:none!important;visibility:hidden!important}";
-    }).join("");
-    document.head.appendChild(hideStyle);
-    // Layer 2 — close now
-    closeNativeCartElements();
-    // Layer 3 — keep shut: re-close anything that re-opens itself
-    const keepShutObserver = new MutationObserver(closeNativeCartElements);
-    NATIVE_CART_SELECTORS.forEach(function (selector) {
-      document.querySelectorAll(selector).forEach(function (nativeEl) {
-        keepShutObserver.observe(nativeEl, {
-          attributes: true, attributeFilter: ["open", "aria-hidden", "class"],
-        });
-      });
-    });
-  }
-  /* §5 count-sync — we intercept silently, so the theme never learns about
-     programmatic changes; we update its own bubble ourselves. Extend per theme. */
-  const COUNT_SYNC_TARGETS = [
-    { selector: ".cart-count-bubble span[aria-hidden='true']", type: "text" },   // Dawn
-    { selector: "#CartCount, .header__cart-count",             type: "text" },
-    { selector: "[data-cart-count]", type: "attribute", attribute: "data-cart-count" },
-    { selector: ".cart-count-bubble", type: "toggle", showClass: "sc-visible" },  // Dawn dot
-  ];
-
-  const COUNT_SYNC_APPLIERS = {
-    text: function (el, count) { el.textContent = count; el.removeAttribute("hidden"); },
-    attribute: function (el, count, target) { el.setAttribute(target.attribute, count); },
-    toggle: function (el, count, target) {
-      const visible = count > 0;
-      el.classList.toggle(target.showClass, visible);
-      el.style.visibility = visible ? "visible" : "";   // light-DOM bubble; can't be styled from our shadow
-    },
-  };
-
-  function syncCartCount(count) {
-    COUNT_SYNC_TARGETS.forEach(function (target) {
-      document.querySelectorAll(target.selector).forEach(function (el) {
-        try { COUNT_SYNC_APPLIERS[target.type](el, count, target); } catch (syncError) { /* one bad target must not stop the rest */ }
-      });
-    });
-  }
-  /* §6 progress bar + free-gift engine */
-  let justUnlockedFlash = null;   // { label, expiresAt } — brief unlockedText flash
-  let previousProgressTotal = 0;
-  let lastFillPercent = 0;        // last rendered fill %, so the bar animates from it, not 0
-
-  function progressBlock() {
-    const block = spec.header && spec.header.PROGRESS_BAR;
-    return block && block.enabled && block.props && Array.isArray(block.props.rules) ? block : null;
-  }
-
-  function sortedProgressRules() {
-    const block = progressBlock();
-    if (!block) return [];
-    return block.props.rules.slice().sort(function (a, b) { return a.unlockAt - b.unlockAt; });
-  }
-
-  function progressTotal() {
-    const block = progressBlock();
-    if (!cart || !block) return 0;
-    return block.props.unlockedBy === "QUANTITY" ? cart.item_count : cart.total_price;
-  }
-
-  // rule.unlockAt is authored in the MAJOR currency unit (dollars/rupees), while the cart
-  // total is in cents — scale money thresholds to cents so they compare/position correctly.
-  // For QUANTITY goals unlockAt is a raw item count (no scaling). Everything downstream
-  // (fill %, marker positions, crossings, needed-amount) derives from this one function.
-  function ruleThreshold(rule) {
-    const block = progressBlock();
-    const value = Number(rule.unlockAt) || 0;
-    return block && block.props.unlockedBy === "QUANTITY" ? value : value * 100;
-  }
-
-  // Milestones are spaced EVENLY (marker i at (i+1)/N of the bar), like Kaching — never
-  // clustered by threshold value. The fill interpolates WITHIN each equal segment so it
-  // reaches marker i exactly when the total hits thresholds[i]. Returns a 0–100 percent.
-  function segmentedFillPercent(total, thresholds) {
-    const count = thresholds.length;
-    if (!count) return 0;
-    if (total >= thresholds[count - 1]) return 100;
-    for (let i = 0; i < count; i++) {
-      if (total < thresholds[i]) {
-        const prev = i === 0 ? 0 : thresholds[i - 1];
-        const span = thresholds[i] - prev;
-        const withinSegment = span > 0 ? (total - prev) / span : 0;
-        return ((i + Math.max(0, Math.min(1, withinSegment))) / count) * 100;
-      }
-    }
-    return 100;
-  }
-
-  function formatProgressAmount(amount) {
-    const block = progressBlock();
-    return block && block.props.unlockedBy === "QUANTITY" ? String(amount) : money(amount);
-  }
-
-  function progressVars() {
-    const rules = sortedProgressRules();
-    if (!rules.length) return {};
-    const total = progressTotal();
-    const nextRule = rules.find(function (rule) { return total < ruleThreshold(rule); });
-    return {
-      needed: nextRule ? formatProgressAmount(ruleThreshold(nextRule) - total) : "",
-      next: nextRule ? nextRule.label : "",
-      unlocked: justUnlockedFlash ? justUnlockedFlash.label : "",
-    };
-  }
-
-  // called from setCart (Step 2) — detects a threshold crossing for the flash message
-  function trackUnlockCrossings() {
-    const rules = sortedProgressRules();
-    if (!rules.length) return;
-    const total = progressTotal();
-    const crossedRule = rules.find(function (rule) {
-      const threshold = ruleThreshold(rule);
-      return previousProgressTotal < threshold && total >= threshold;
-    });
-    previousProgressTotal = total;
-    if (crossedRule) {
-      justUnlockedFlash = { label: crossedRule.label, expiresAt: Date.now() + 3000 };
-      setTimeout(function () { justUnlockedFlash = null; render(); }, 3000);
-    }
-  }
-
-  function PROGRESS_BAR(block) {
-    const rules = sortedProgressRules();
-    if (!rules.length || !cart) return "";
-    const blockProps = block.props;
-    const total = progressTotal();
-    const count = rules.length;
-    const thresholds = rules.map(ruleThreshold);
-    // EVEN spacing: marker i sits at (i+1)/N of the bar regardless of its threshold value,
-    // so markers never cluster and labels never collide no matter how many rules exist.
-    const fillPercent = segmentedFillPercent(total, thresholds);
-    const nextRule = rules.find(function (rule) { return total < ruleThreshold(rule); });
-    let messageTemplate;
-    if (!nextRule) messageTemplate = blockProps.allUnlockedText;
-    else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
-    else messageTemplate = blockProps.defaultText;
-    // Kaching-style ring markers ON the track, plain labels below, evenly distributed.
-    // The last marker/label is right-aligned to the track end so it isn't clipped at 100%.
-    function markerPct(i) { return ((i + 1) / count) * 100; }
-    function edgeShift(i) { return i === count - 1 ? "-100%" : "-50%"; }
-    const markers = rules.map(function (rule, i) {
-      const reached = total >= thresholds[i];
-      return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
-        '" style="left:' + markerPct(i) + "%;transform:translate(" + edgeShift(i) + ',-50%)"></span>';
-    }).join("");
-    const labels = rules.map(function (rule, i) {
-      const reached = total >= thresholds[i];
-      return '<span class="sc-ms-label' + (reached ? " sc-done" : "") +
-        '" style="left:' + markerPct(i) + "%;transform:translateX(" + edgeShift(i) + ')">' + esc(rule.label) + "</span>";
-    }).join("");
-    // fill starts at the PREVIOUS width; render() bumps it to data-pct in a rAF so the
-    // CSS width-transition actually animates (the element is recreated on every render)
-    return '<div class="sc-progress"><p class="sc-progress-text">' + fill(messageTemplate, tvars()) +
-      '</p><div class="sc-track"><div class="sc-fill" data-pct="' + fillPercent + '" style="width:' + lastFillPercent + '%"></div>' +
-      markers + '</div><div class="sc-ms-labels">' + labels + "</div></div>";
-  }
-
-  /* Free-gift engine. JS adds/removes the gift LINE; a Shopify automatic discount
-     makes its PRICE zero — money is never client-side. The `_sc_gift` line property
-     is both the FREE badge marker and how this loop finds its own additions. */
-  let freeGiftBusy = false;    // re-entry guard: checkFreeGift runs inside setCart
-
-  function numericIdFromGid(gid) {
-    const match = String(gid || "").match(/(\d+)$/);
-    return match ? Number(match[1]) : null;
-  }
-
-  function checkFreeGift() {
-    if (freeGiftBusy || !cart) return;
-    const giftRules = sortedProgressRules().filter(function (rule) {
-      return rule.type === "FREE_GIFT" && rule.product;
-    });
-    if (!giftRules.length) return;
-    const total = progressTotal();
-    giftRules.forEach(function (rule) {
-      const giftVariantId = numericIdFromGid(rule.product.variantId);
-      if (!giftVariantId) return;
-      const giftLineIndex = cart.items.findIndex(function (line) {
-        return line.variant_id === giftVariantId && line.properties && line.properties._sc_gift;
-      });
-      const threshold = ruleThreshold(rule);
-      if (total >= threshold && giftLineIndex === -1) {
-        freeGiftBusy = true;
-        pausedWrite("cart/add.js", {
-          items: [{ id: giftVariantId, quantity: 1, properties: { _sc_gift: "true" } }],
-        }).then(function (added) {
-          freeGiftBusy = false;
-          if (added) refreshCart();   // state now matches → next check is a no-op
-        });
-      } else if (total < threshold && giftLineIndex !== -1) {
-        freeGiftBusy = true;
-        pausedWrite("cart/change.js", { line: giftLineIndex + 1, quantity: 0 })
-          .then(function (nextCart) {
-            freeGiftBusy = false;
-            if (nextCart) setCart(nextCart);
-          });
-      }
-    });
-  }
-  /* §7 timer — per-visitor deadline in a first-party cookie; one interval app-wide */
-  const TIMER_COOKIE_NAME = "_sc_timer_end";
-  let timerExpiryHandled = false;
-  let previousItemCount = null;
-
-  function enabledTimerBlock() {
-    const block = spec.header && spec.header.TIMER;
-    return block && block.enabled && block.props ? block : null;
-  }
-
-  function readTimerDeadline() {
-    const match = document.cookie.match(new RegExp("(?:^|; )" + TIMER_COOKIE_NAME + "=(\\d+)"));
-    return match ? Number(match[1]) : null;
-  }
-
-  function writeTimerDeadline(epochMs) {
-    document.cookie = TIMER_COOKIE_NAME + "=" + epochMs + ";path=/;max-age=86400;SameSite=Lax";
-  }
-
-  function stampFreshDeadline() {
-    const block = enabledTimerBlock();
-    if (!block) return;
-    writeTimerDeadline(Date.now() + (Number(block.props.timeLimit) || 30) * 60000);
-    timerExpiryHandled = false;
-  }
-
-  function timerText() {
-    const deadline = readTimerDeadline();
-    if (!deadline) return "";
-    const msLeft = Math.max(0, deadline - Date.now());
-    const minutes = String(Math.floor(msLeft / 60000)).padStart(2, "0");
-    const seconds = String(Math.floor((msLeft % 60000) / 1000)).padStart(2, "0");
-    return minutes + ":" + seconds;
-  }
-
-  function TIMER(block) {
-    const deadline = readTimerDeadline();
-    if (!deadline || Date.now() >= deadline) return "";   // renders nothing past expiry
-    // esc the whole title FIRST, then splice the live span in place of {{timer}}
-    const titleHtml = esc(block.props.title).replace(/\{\{\s*timer\s*\}\}/g,
-      '<span data-sc-timer>' + timerText() + "</span>");
-    return '<div class="sc-timer">' + titleHtml + "</div>";
-  }
-
-  function onTimerTick() {
-    const block = enabledTimerBlock();
-    if (!block) return;
-    const timerSpan = shadow.querySelector("[data-sc-timer]");
-    if (timerSpan) timerSpan.textContent = timerText();     // 1s tick touches ONE span
-    const deadline = readTimerDeadline();
-    if (deadline && Date.now() >= deadline && !timerExpiryHandled) {
-      timerExpiryHandled = true;
-      if (block.props.removeCartItemsTimerEnds && cart && cart.item_count > 0) {
-        pausedWrite("cart/clear.js", {}).then(function (clearedCart) {
-          if (clearedCart) setCart(clearedCart);
-        });
-      } else {
-        render();   // one full render so TIMER disappears
-      }
-    }
-  }
-
-  function startTimerEngine() {
-    if (!enabledTimerBlock()) return;    // no-op when the block is disabled
-    if (!readTimerDeadline()) stampFreshDeadline();
-    setInterval(onTimerTick, 1000);
-  }
-
-  // called from setCart: re-stamp the deadline when the item count GROWS
-  function maybeResetTimerOnAdd() {
-    const block = enabledTimerBlock();
-    const count = cart ? cart.item_count : 0;
-    if (block && block.props.resetTimerProductAddedToCart &&
-        previousItemCount != null && count > previousItemCount) {
-      stampFreshDeadline();
-    }
-    previousItemCount = count;
-  }
-  /* §8 footer blocks */
-  function DISCOUNT_CODE(block) {
-    const blockProps = block.props || {};
-    const appliedChips = ((cart && cart.discount_codes) || [])
-      .filter(function (discount) { return discount.applicable !== false; })
-      .map(function (discount) {
-        return '<span class="sc-chip">' + esc(discount.code) +
-          '<button data-action="remove-discount" aria-label="Remove discount">✕</button></span>';
+  class NativeCartSuppressor {
+    start() {
+      // Layer 1 — hide: one stylesheet, every selector guarded so we never match ourselves
+      const hideStyle = document.createElement("style");
+      hideStyle.textContent = NATIVE_CART_SELECTORS.map(function (selector) {
+        return selector + ":not(#side-cart){display:none!important;visibility:hidden!important}";
       }).join("");
-    return '<div class="sc-discount"><div class="sc-disc-row">' +
-      '<input id="sc-disc-input" type="text" placeholder="' + esc(blockProps.placeholderTitle) + '">' +
-      '<button class="sc-apply" data-action="apply-discount">' + esc(blockProps.buttonText) + "</button>" +
-      '</div><div class="sc-chips">' + appliedChips + "</div></div>";
-  }
-
-  function applyDiscount(code) {
-    return pausedWrite("cart/update.js", { discount: code || "" })
-      .then(function (nextCart) { nextCart ? setCart(nextCart) : refreshCart(); });
-  }
-
-  function ORDER_NOTES(block) {
-    const blockProps = block.props || {};
-    const textareaHtml = notesOpen
-      ? '<textarea id="sc-notes" placeholder="' + esc(blockProps.textAreaPlaceholder) + '">' +
-        esc((cart && cart.note) || "") + "</textarea>"
-      : "";
-    return '<div class="sc-notes"><button class="sc-notes-toggle" data-action="toggle-notes">' +
-      esc(blockProps.title) + " " + (notesOpen ? "▴" : "▾") + "</button>" + textareaHtml + "</div>";
-  }
-
-  function saveOrderNote(noteText) {
-    return pausedWrite("cart/update.js", { note: noteText }); // useless-keys body → interceptor ignores it
-  }
-
-  function TRUST_BADGES(block) {
-    const badges = (block.props && block.props.badges) || [];
-    if (!badges.length) return "";
-    return '<div class="sc-trust">' + badges.map(function (badge) {
-      return "<span>" + esc(badge.title) + "</span>";
-    }).join("") + "</div>";
-  }
-
-  function PAYMENT_METHODS(block) {
-    const icons = (block.props && block.props.icons) || [];
-    if (!icons.length) return "";
-    return '<div class="sc-pay">' + icons.map(function (iconLabel) {
-      return "<span>" + esc(iconLabel) + "</span>";
-    }).join("") + "</div>";
-  }
-
-  /* input preservation — typed-but-unsubmitted text survives every innerHTML replace */
-  const preservedInputs = { discountCode: "", noteText: null };
-
-  function snapshotInputs() {
-    const discountInput = $("sc-disc-input");
-    if (discountInput) preservedInputs.discountCode = discountInput.value;
-    const notesTextarea = $("sc-notes");
-    if (notesTextarea) preservedInputs.noteText = notesTextarea.value;
-  }
-
-  function restoreInputs() {
-    const discountInput = $("sc-disc-input");
-    if (discountInput && preservedInputs.discountCode) discountInput.value = preservedInputs.discountCode;
-    const notesTextarea = $("sc-notes");
-    if (notesTextarea && preservedInputs.noteText != null) notesTextarea.value = preservedInputs.noteText;
-  }
-
-  // notes save on blur (capture phase — blur does not bubble)
-  shadow.addEventListener("blur", function (event) {
-    if (event.target && event.target.id === "sc-notes") saveOrderNote(event.target.value);
-  }, true);
-  /* §9 variant selector — lazy per-handle product data, single-request swap */
-  const productCache = new Map();   // handle → {status, data}
-
-  function ensureProductLoaded(productHandle) {
-    if (!productHandle || productCache.has(productHandle)) return;
-    productCache.set(productHandle, { status: "pending" });
-    _fetch(ctx.root + "products/" + productHandle + ".js", { headers: { "X-Side-Cart": "1" } })
-      .then(function (response) {
-        if (!response.ok) throw new Error("product fetch " + response.status);
-        return response.json();
-      })
-      .then(function (productData) {
-        productCache.set(productHandle, { status: "ok", data: productData });
-        render();   // upgrade the static label to a live select
-      })
-      .catch(function () {
-        productCache.set(productHandle, { status: "error" });  // static label stays
+      document.head.appendChild(hideStyle);
+      // Layer 2 — close now
+      this._closeNativeCartElements();
+      // Layer 3 — keep shut: re-close anything that re-opens itself
+      const self = this;
+      const keepShutObserver = new MutationObserver(function () { self._closeNativeCartElements(); });
+      NATIVE_CART_SELECTORS.forEach(function (selector) {
+        document.querySelectorAll(selector).forEach(function (nativeEl) {
+          keepShutObserver.observe(nativeEl, {
+            attributes: true, attributeFilter: ["open", "aria-hidden", "class"],
+          });
+        });
       });
+    }
+
+    _closeNativeCartElements() {
+      NATIVE_CART_SELECTORS.forEach(function (selector) {
+        document.querySelectorAll(selector).forEach(function (nativeEl) {
+          try {
+            if (typeof nativeEl.close === "function") nativeEl.close();
+            nativeEl.removeAttribute("open");
+            ["active", "is-open", "animate", "open"].forEach(function (cls) {
+              nativeEl.classList.remove(cls);
+            });
+            nativeEl.querySelectorAll(NATIVE_CLOSE_BUTTON_SELECTORS).forEach(function (closeButton) {
+              closeButton.click();   // themes that only close via their own button
+            });
+          } catch (closeError) { /* one drawer failing must not stop the rest */ }
+        });
+      });
+      SCROLL_LOCK_CLASSES.forEach(function (lockClass) {
+        document.body.classList.remove(lockClass);
+        document.documentElement.classList.remove(lockClass);
+      });
+    }
   }
 
-  function variantHtml(item, blockProps) {
-    if (!blockProps.showVariantSelector) return "";
-    // single-variant products (Shopify's default "Default Title" variant) have no real
-    // options — show neither a label nor a picker
-    if (item.product_has_only_default_variant || !item.variant_title) return "";
-    const isGiftLine = item.properties && item.properties._sc_gift;
-    const staticLabel = '<span class="sc-variant">' + esc(item.variant_title) + "</span>";
-    if (isGiftLine) return staticLabel;
-    const cached = productCache.get(item.handle);
-    if (!cached) { ensureProductLoaded(item.handle); return staticLabel; }
-    if (cached.status !== "ok" || !Array.isArray(cached.data.variants) ||
-        cached.data.variants.length < 2) return "";   // only one real variant → no picker
-    const options = cached.data.variants.map(function (variant) {
-      return '<option value="' + variant.id + '"' +
-        (variant.id === item.variant_id ? " selected" : "") +
-        (variant.available ? "" : " disabled") + ">" + esc(variant.title) + "</option>";
-    }).join("");
-    return '<select class="sc-variant-select" data-action="variant" ' +
-      'data-old-variant="' + item.variant_id + '" data-line-qty="' + item.quantity + '">' +
-      options + "</select>";
+  /* Click detector — the theme's cart icon opens OUR drawer. Extend the list per theme. */
+  const CART_LINK_SELECTORS =
+    'a[href$="/cart"], a[href*="/cart?"], a[href*="/cart#"], #cart-icon-bubble, ' +
+    '.header__icon--cart, [data-cart-icon], [data-drawer-toggle="cart"]';
+
+  class CartIconClicks {
+    constructor(openDrawer) { this.openDrawer = openDrawer; }
+    start() {
+      const self = this;
+      document.addEventListener("click", function (event) {
+        if (event.target.closest("#sc-root")) return;      // never hijack clicks in OUR drawer
+        const cartLink = event.target.closest(CART_LINK_SELECTORS);
+        if (cartLink) { event.preventDefault(); event.stopPropagation(); self.openDrawer(); }
+      }, true);
+    }
   }
 
-  function swapVariant(oldVariantId, newVariantId, lineQuantity) {
-    if (!oldVariantId || !newVariantId || oldVariantId === newVariantId) return Promise.resolve();
-    // cart/update.js `updates` sets ABSOLUTE quantities per variant. If the target variant
-    // is already in the cart, we must merge — set it to its existing qty + the swapped qty —
-    // otherwise the existing line's quantity is overwritten (e.g. swap Navy→Black with a
-    // Black already present would drop Black back to 1 instead of 2).
-    let existingTargetQty = 0;
-    ((cart && cart.items) || []).forEach(function (line) {
-      const isGift = line.properties && line.properties._sc_gift;
-      if (line.variant_id === newVariantId && !isGift) existingTargetQty += line.quantity;
+  /* ---------- §6 boot — runs LAST; everything above is defined by now ---------- */
+  const CRITICAL_CSS =
+    ":host{display:block!important}" +
+    "*{box-sizing:border-box}" +
+    "#sc-overlay{position:fixed;inset:0;background:rgba(17,17,17,.45);opacity:0;pointer-events:none;z-index:2147483646}" +
+    "#side-cart{position:fixed;top:0;right:0;height:100%;width:min(100vw,525px);background:#fff;" +
+    "transform:translateX(100%);z-index:2147483647;display:flex;flex-direction:column}" +
+    ":host(.sc-open) #side-cart{transform:none}" +
+    ":host(.sc-open) #sc-overlay{opacity:1;pointer-events:auto}";
+
+  function boot() {
+    spec = readJson("sc-spec") || window.__SC_SPEC__ || null;
+    ctx = readJson("sc-ctx") || { root: "/", moneyFormat: "{{amount}}", currency: "", locale: "", checkoutUrl: "/checkout" };
+    const host = document.getElementById("sc-root");
+    if (!spec || !host) return;                        // silent no-op, theme cart untouched
+
+    const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
+    if (!host.firstChild) host.appendChild(document.createElement("span"));   // div:empty guard
+    shadow.innerHTML =
+      "<style>" + CRITICAL_CSS + "</style>" +
+      (ctx.cssUrl ? '<link rel="stylesheet" href="' + esc(ctx.cssUrl) + '">' : "") +
+      '<div id="sc-overlay" data-action="close"></div>' +
+      '<aside id="side-cart" role="dialog" aria-modal="true" aria-label="Cart">' +
+      '<div id="sc-header"></div><div id="sc-body"></div><div id="sc-footer"></div></aside>';
+
+    host.style.cssText = styleVars(spec.general || {});   // tokens inherit across the shadow
+
+    const store = new SideCartStore(spec, ctx);
+
+    defineBlocks({
+      "sc-top-bar": ScTopBar, "sc-subtotal": ScSubtotal, "sc-checkout-button": ScCheckoutButton,
+      "sc-trust-badges": ScTrustBadges, "sc-payment-methods": ScPaymentMethods,
+      "sc-timer": ScTimer, "sc-progress-bar": ScProgressBar,
+      "sc-products": ScProducts, "sc-discount-code": ScDiscountCode, "sc-order-notes": ScOrderNotes,
     });
-    const updates = {};
-    updates[oldVariantId] = 0;
-    updates[newVariantId] = existingTargetQty + lineQuantity;
-    return pausedWrite("cart/update.js", { updates: updates })
-      .then(function (nextCart) { nextCart ? setCart(nextCart) : refreshCart(); });
+
+    ["header", "body", "footer"].forEach(function (region) {
+      const regionHost = shadow.getElementById("sc-" + region);
+      const blocks = spec[region] || {};
+      if (blocks.style) regionHost.style.cssText = styleVars(blocks.style);
+      Object.keys(blocks).forEach(function (type) {
+        if (type === "style" || !blocks[type] || !blocks[type].enabled) return;
+        const el = createBlock(type, blocks[type], store);
+        if (el) regionHost.appendChild(el);
+      });
+    });
+
+    // While the drawer is open, lock the PAGE's scroll (saving whatever inline overflow
+    // the theme had) so wheel/touch scrolling over the drawer can never move the page;
+    // #sc-body's overscroll-behavior:contain (cart.css) stops chaining at the list's ends.
+    let savedBodyOverflow = null;
+    function openDrawer() {
+      if (!host.classList.contains("sc-open")) {
+        savedBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+      }
+      host.classList.add("sc-open");
+      document.dispatchEvent(new CustomEvent("side-cart:open"));
+    }
+    function closeDrawer() {
+      if (host.classList.contains("sc-open")) {
+        document.body.style.overflow = savedBodyOverflow || "";
+        savedBodyOverflow = null;
+      }
+      host.classList.remove("sc-open");
+      document.dispatchEvent(new CustomEvent("side-cart:close"));
+    }
+
+    shadow.addEventListener("sc:close-request", closeDrawer);
+    shadow.getElementById("sc-overlay").addEventListener("click", closeDrawer);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+
+    const drawer = shadow.getElementById("side-cart");
+    store.addEventListener("sc:busy", function (e) { drawer.classList.toggle("sc-busy", e.detail.busy); });
+    store.addEventListener("sc:update", function () {
+      const empty = !store.cart || store.cart.item_count === 0;
+      host.classList.toggle("sc-empty-cart", empty);
+    });
+
+    new CartInterceptor(store, openDrawer).start();
+    new CartMutationObserverNet(store, openDrawer).start();
+    new NativeCartSuppressor().start();
+    new CartIconClicks(openDrawer).start();
+
+    window.SideCart = { root: shadow, open: openDrawer, close: closeDrawer,
+      refresh: function () { return store.refresh(); } };
+    window.__SC_TEST__.store = store;
+    store.refresh();   // first paint
   }
 
-  // <select> fires "change", not "click" — a second delegated listener on the shadow root
-  shadow.addEventListener("change", function (event) {
-    const selectEl = event.target.closest('[data-action="variant"]');
-    if (selectEl) {
-      swapVariant(
-        Number(selectEl.dataset.oldVariant),
-        Number(selectEl.value),
-        Number(selectEl.dataset.lineQty)
-      );
-      return;
-    }
-    // typed quantity — commits on blur/Enter, like Kaching's center input
-    const qtyInput = event.target.closest("[data-qty-input]");
-    if (qtyInput) {
-      const stepper = qtyInput.closest(".sc-qty");
-      if (stepper) stepper.classList.add("sc-loading");
-      changeQty(qtyInput.dataset.line, Math.max(0, parseInt(qtyInput.value, 10) || 0));
-    }
-  });
+  // test hook — lets the harness/console reach pure units without polluting prod API
+  window.__SC_TEST__ = { esc, money, groupThousands, styleVars, segmentedFillPercent,
+    ruleThreshold: (s, r) => ruleThreshold(s, r), morph: null /* set in Step 2 */,
+    setCtx: (c) => { ctx = c; }, setSpec: (s) => { spec = s; } };
+  window.__SC_TEST__.morph = morph;
+  window.__SC_TEST__.SideCartStore = SideCartStore;
 
-  // Enter commits the typed quantity (blur fires the change handler above)
-  shadow.addEventListener("keydown", function (event) {
-    if (event.key === "Enter" && event.target.closest("[data-qty-input]")) {
-      event.preventDefault();
-      event.target.blur();
-    }
-  });
-
-  shadow.addEventListener("click", function (e) {
-    const t = e.target.closest("[data-action]");
-    if (!t) return;
-    route(t.dataset.action, t);
-  });
-
-  function route(action, actionTarget) {
-    switch (action) {
-      case "qty": {
-        const stepper = actionTarget.closest(".sc-qty");
-        if (stepper) stepper.classList.add("sc-loading");   // spinner until the re-render replaces it
-        changeQty(actionTarget.dataset.line, Number(actionTarget.dataset.qty));
-        break;
-      }
-      case "remove": {
-        actionTarget.classList.add("sc-loading");           // spinner in the trash button
-        changeQty(actionTarget.dataset.line, 0);
-        break;
-      }
-      case "apply-discount": {
-        const discountInput = $("sc-disc-input");
-        const discountCode = discountInput && discountInput.value.trim();
-        if (discountCode) {
-          preservedInputs.discountCode = "";
-          discountInput.value = "";
-          applyDiscount(discountCode);
-        }
-        break;
-      }
-      case "remove-discount": applyDiscount(""); break;
-      case "toggle-notes": notesOpen = !notesOpen; render(); break;
-      case "checkout": location.href = ctx.checkoutUrl || "/checkout"; break;
-      case "close": closeDrawer(); break;
-    }
-  }
-
-  // `root` is the shadow root — query it to read/update widget content, e.g.
-  // window.SideCart.root.querySelector('#sc-body')
-  window.SideCart = { root: shadow, open: openDrawer, close: closeDrawer, refresh: refreshCart };
-
-  /* Boot — runs LAST, after every region's config bindings are assigned. These calls
-     are synchronous and read config declared across §4–§9, so they must not run
-     before those declarations execute (function declarations hoist; these
-     assignments do not). Interceptor closures read their config lazily, so patching here is safe. */
-  installFetchInterceptor();
-  installXhrInterceptor();
-  installCartMutationObserver();   // safety net for adds that bypass the fetch/XHR patch
-  installCartIconClickDetector();
-  disableNativeCart();
-  startTimerEngine();
-  refreshCart(); // first paint
+  boot();
 })();

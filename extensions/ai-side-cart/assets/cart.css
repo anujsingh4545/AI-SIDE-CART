@@ -20,7 +20,7 @@
 }
 #side-cart {
   position: fixed; top: 0; right: 0; height: 100%;
-  width: min(100vw, 525px); background: var(--sc-bg); color: var(--sc-text);
+  width: min(100vw, 480px); background: var(--sc-bg); color: var(--sc-text);
   transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
   z-index: 2147483647; display: flex; flex-direction: column;
   box-shadow: -10px 0 40px rgba(0,0,0,.18); font-size: var(--sc-font-size); line-height: 1.4;
@@ -30,7 +30,7 @@
 /* Layout: blocks carry NO padding of their own. Each region is a grid container that
    owns the padding, and the gap provides consistent spacing between blocks. */
 #sc-header { flex: none; display: grid; gap: 12px; padding: 16px 14px 6px; }
-#sc-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; display: grid; gap: 12px; align-content: start; padding: 6px 14px; }
+#sc-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; display: grid; gap: 12px; align-content: start; padding: 6px 14px; }
 #sc-footer { flex: none; background: var(--sc-bg); box-shadow: 0 -1px 0 var(--sc-line); display: grid; gap: 12px; padding: 14px; }
 .sc-block { padding: 0; min-width: 0; }
 
@@ -63,8 +63,8 @@
 .sc-line { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--sc-line); }
 .sc-line:last-child { border-bottom: 0; }
 .sc-img { width: var(--sc-img); height: var(--sc-img); object-fit: cover; border-radius: var(--sc-radius); background: #f3f3f3; border: 1px solid var(--sc-line); flex: none; }
-.sc-line-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.sc-line-title { color: var(--sc-title); font-weight: 700; font-size: 15px; line-height: 1.3; text-decoration: none; }
+.sc-line-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sc-line-title { color: var(--sc-title); font-weight: 700; font-size: 14px; line-height: 1.2; text-decoration: none; }
 a.sc-line-title:hover { text-decoration: underline; }
 .sc-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sc-variant { color: var(--sc-muted); font-size: 13px; }
@@ -96,7 +96,9 @@ a.sc-line-title:hover { text-decoration: underline; }
 }
 @keyframes sc-spin { to { transform: rotate(360deg); } }
 .sc-line-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; text-align: right; }
-.sc-price { font-weight: 700; font-size: 15px; white-space: nowrap; }
+/* was-price + price grouped tightly; the group is one flex child of .sc-line-side */
+.sc-prices { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.sc-price { font-weight: 700; font-size: 14px; white-space: nowrap; }
 .sc-price-was { color: var(--sc-original); font-weight: 400; font-size: 13px; text-decoration: line-through; white-space: nowrap; }
 .sc-save { display: inline-flex; align-items: center; gap: 4px; color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
 .sc-save svg { width: 11px; height: 11px; flex: none; }
