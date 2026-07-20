@@ -1,70 +1,89 @@
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useFetcher } from "react-router";
+import { SaveBar } from "@shopify/app-bridge-react";
 import defaultCartSpec from "../../constants/cart-spec.js";
+import ChatSection from "../cart-builder/ChatSection/ChatSection.jsx";
+import PreviewSection from "../cart-builder/PreviewSection/PreviewSection.jsx";
+import ManualSettingsSection from "../cart-builder/ManualSettingsSection/ManualSettingsSection.jsx";
+import styles from "./BuildStep.module.css";
+
+const SAVE_BAR_ID = "cart-builder-save-bar";
 
 export default function BuildStep({ spec }) {
-  const modalRef = useRef(null);
-  const fetcher  = useFetcher();
-
-  const cartSpec = spec ?? defaultCartSpec;
-  const saving   = fetcher.state !== "idle";
-  const saved    = fetcher.data?.ok === true;
+  const [cartSpec, setCartSpec] = useState(spec ?? defaultCartSpec);
+  const [initialState, setInitialState] = useState(spec ?? defaultCartSpec);
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [detectChange, setDetectChange] = useState(false);
+  const [loadingSave, setLoadingSave] = useState(false);
+  const fetcher = useFetcher();
+  const savedSpecRef = useRef(null);
 
   useEffect(() => {
-    modalRef.current?.show();
-  }, []);
+    // eslint-disable-next-line no-undef
+    if (detectChange) shopify.saveBar.show(SAVE_BAR_ID);
+    // eslint-disable-next-line no-undef
+    else shopify.saveBar.hide(SAVE_BAR_ID);
+  }, [detectChange]);
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && loadingSave) {
+      setLoadingSave(false);
+      setInitialState(savedSpecRef.current ?? cartSpec);
+      savedSpecRef.current = null;
+      setDetectChange(false);
+    }
+  }, [fetcher.state, loadingSave]);
+
+  function handleSpecChange(section, value) {
+    setCartSpec((prev) => ({ ...prev, [section]: value }));
+    setDetectChange(true);
+  }
+
+  function handleFullSpecChange(newSpec) {
+    setCartSpec(newSpec);
+    setDetectChange(true);
+  }
+
+  function handleDiscard() {
+    setCartSpec(initialState);
+    setDetectChange(false);
+  }
 
   function handleSave() {
+    setLoadingSave(true);
+    savedSpecRef.current = cartSpec;
     fetcher.submit(cartSpec, {
-      method:  "POST",
-      action:  "/app/save-cart",
+      method: "POST",
+      action: "/app/save-cart",
       encType: "application/json",
     });
   }
 
   return (
-    <ui-modal id="cart-builder-modal" ref={modalRef} variant="max">
-      <ui-title-bar title="Build your cart" />
-
-      <div style={{ padding: 32 }}>
-        <p style={{ fontFamily: "sans-serif", color: "#444", marginBottom: 16 }}>
-          Your AI-generated cart spec is ready. Editor coming soon.
-        </p>
-
-        <pre style={{
-          fontSize: 11,
-          background: "#f5f5f5",
-          padding: 16,
-          borderRadius: 8,
-          overflow: "auto",
-          marginBottom: 24,
-        }}>
-          {JSON.stringify(cartSpec, null, 2)}
-        </pre>
-
+    <div className={styles.page}>
+      <SaveBar id={SAVE_BAR_ID}>
         <button
+          variant="primary"
           onClick={handleSave}
-          disabled={saving || saved}
-          style={{
-            padding:      "10px 24px",
-            background:   saved ? "#2E7D32" : "#6D28D9",
-            color:        "#fff",
-            border:       "none",
-            borderRadius: 8,
-            fontSize:     14,
-            cursor:       saving || saved ? "default" : "pointer",
-            opacity:      saving ? 0.7 : 1,
-          }}
+          loading={loadingSave ? "" : undefined}
         >
-          {saved ? "✓ Saved & published" : saving ? "Saving…" : "Save & publish"}
+          Save
         </button>
+        <button onClick={handleDiscard}>Discard</button>
+      </SaveBar>
 
-        {fetcher.data?.userErrors?.length > 0 && (
-          <p style={{ color: "red", marginTop: 8, fontSize: 12 }}>
-            {fetcher.data.userErrors.map((e) => e.message).join(", ")}
-          </p>
-        )}
+      <div className={styles.columns}>
+        <ChatSection spec={cartSpec} onSpecChange={handleFullSpecChange} />
+        <PreviewSection />
+        <ManualSettingsSection
+          spec={cartSpec}
+          onChange={handleSpecChange}
+          products={selectedProducts}
+          onProductsChange={(val) => {
+            setSelectedProducts(val);
+          }}
+        />
       </div>
-    </ui-modal>
+    </div>
   );
 }

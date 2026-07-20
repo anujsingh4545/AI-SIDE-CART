@@ -4,9 +4,9 @@ import ReviewStep from "./ReviewStep";
 import BuildStep from "./BuildStep";
 import "../../styles/onboarding.css";
 
-export default function Onboarding({ scanData, themeData, aiSummary }) {
-  const [step, setStep] = useState(0);
-  const [generatedSpec, setGeneratedSpec] = useState(null);
+export default function Onboarding({ scanData, themeData, aiSummary, onboardingCompleted, savedSpec }) {
+  const [step, setStep] = useState(onboardingCompleted ? 2 : 0);
+  const [generatedSpec, setGeneratedSpec] = useState(onboardingCompleted ? savedSpec : null);
 
   const next = () => setStep((s) => Math.min(s + 1, 2));
 
@@ -41,3 +41,4 @@ export default function Onboarding({ scanData, themeData, aiSummary }) {
     </div>
   );
 }
+  

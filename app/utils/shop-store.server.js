@@ -4,6 +4,7 @@ const prisma = new PrismaClient();
 
 function specFromRow(row) {
   return {
+    status:  row.status ?? "draft",
     general: row.general,
     header:  row.header,
     body:    row.body,
@@ -12,15 +13,23 @@ function specFromRow(row) {
 }
 
 export async function upsertShop(shopDomain, brandName) {
-  await prisma.shop.upsert({
+  return prisma.shop.upsert({
     where:  { shopName: shopDomain },
     update: { brandName },
     create: { shopName: shopDomain, brandName },
   });
 }
 
+export async function completeOnboarding(shopDomain) {
+  await prisma.shop.update({
+    where: { shopName: shopDomain },
+    data:  { onboardingCompleted: true },
+  });
+}
+
 export async function saveCartSpec(shopDomain, spec) {
   const data = {
+    status:  spec.status ?? "draft",
     general: spec.general,
     header:  spec.header,
     body:    spec.body,

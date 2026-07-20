@@ -9,7 +9,9 @@ export const action = async ({ request }) => {
   await saveCartSpec(session.shop, spec);
 
   // 2. Get shop GID for metafield ownership
-  const shopRes  = await admin.graphql(`#graphql query { shop { id } }`);
+  const shopRes  = await admin.graphql(`#graphql
+    query { shop { id } }
+  `);
   const shopData = await shopRes.json();
   const shopId   = shopData.data.shop.id;
 

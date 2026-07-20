@@ -3,16 +3,14 @@ import { authenticate } from "../../shopify.server";
 import { fetchScanData } from "../../utils/shopify-scan.server";
 import { generateScanSummary } from "../../utils/ai-summary.server";
 import { getThemeData } from "../../utils/shopify-theme.server";
-import { upsertShop } from "../../utils/shop-store.server";
+import { upsertShop, getCartSpec } from "../../utils/shop-store.server";
 import Onboarding from "../../components/onboarding/index";
 import { useLoaderData } from "react-router";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
-
   const shopDomain = session.shop;
 
-  // Fetch scan data, theme, and shop name in parallel
   const [scanData, themeData, shopInfoRes] = await Promise.all([
     fetchScanData(admin, 90),
     getThemeData(admin),
@@ -24,16 +22,28 @@ export const loader = async ({ request }) => {
   const shopInfo = await shopInfoRes.json();
   const shopName = shopInfo?.data?.shop?.name ?? shopDomain;
 
-  await upsertShop(shopDomain, shopName);
+  const shop = await upsertShop(shopDomain, shopName);
+  const onboardingCompleted = shop.onboardingCompleted;
 
-  const aiSummary = await generateScanSummary(scanData);
+  const [aiSummary, savedSpec] = await Promise.all([
+    generateScanSummary(scanData),
+    onboardingCompleted ? getCartSpec(shopDomain) : Promise.resolve(null),
+  ]);
 
-  return { scanData, themeData, aiSummary };
+  return { scanData, themeData, aiSummary, onboardingCompleted, savedSpec };
 };
 
 export default function Index() {
-  const { scanData, themeData, aiSummary } = useLoaderData();
-  return <Onboarding scanData={scanData} themeData={themeData} aiSummary={aiSummary} />;
+  const { scanData, themeData, aiSummary, onboardingCompleted, savedSpec } = useLoaderData();
+  return (
+    <Onboarding
+      scanData={scanData}
+      themeData={themeData}
+      aiSummary={aiSummary}
+      onboardingCompleted={onboardingCompleted}
+      savedSpec={savedSpec}
+    />
+  );
 }
 
 export const headers = (headersArgs) => {

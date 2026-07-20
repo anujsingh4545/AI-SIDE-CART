@@ -8,7 +8,15 @@
       "Bash(mkdir -p prisma/migrations/0_init)",
       "Bash(set PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes)",
       "PowerShell(cd \"d:\\\\skailama\\\\ai-side-cart\"; $env:PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION = \"yes\"; npx prisma db push --force-reset 2>&1)",
-      "Bash(rm -rf prisma/migrations/0_init)"
+      "Bash(rm -rf prisma/migrations/0_init)",
+      "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\skailama\\\\ai-side-cart\\\\app\\\\components\\\\cart-builder\\\\ChatSection\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\skailama\\\\ai-side-cart\\\\app\\\\components\\\\cart-builder\\\\PreviewSection\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\skailama\\\\ai-side-cart\\\\app\\\\components\\\\cart-builder\\\\ManualSettingsSection\")",
+      "WebFetch(domain:shopify.dev)",
+      "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\skailama\\\\ai-side-cart\\\\app\\\\components\\\\cart-builder\\\\shared\\\\ColorSwatch\")",
+      "Bash(npm ls *)",
+      "WebFetch(domain:ai-sdk.dev)",
+      "WebFetch(domain:www.assistant-ui.com)"
     ]
   }
 }

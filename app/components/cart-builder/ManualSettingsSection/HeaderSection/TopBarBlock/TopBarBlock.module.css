@@ -1,0 +1,69 @@
+.block {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.blockHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--p-color-bg-surface-secondary);
+  border-bottom: 1px solid var(--p-color-border);
+}
+
+.dragHandle {
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.body {
+  padding: 14px;
+}
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggleTrack {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: var(--p-color-border);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle input:checked + .toggleTrack {
+  background: var(--p-color-bg-fill-success);
+}
+
+.toggleTrack::before {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.toggle input:checked + .toggleTrack::before {
+  transform: translateX(14px);
+}

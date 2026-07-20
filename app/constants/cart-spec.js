@@ -12,6 +12,8 @@
 
 const cartSpec = {
 
+  status : "draft", // active | draft
+
   general: {
     bgColor: "#FFFFFF",
     textColor: "#111111",
@@ -22,6 +24,8 @@ const cartSpec = {
 
   /* ── HEADER ──────────────────────────────────────────────── */
   header: {
+
+    order: ["TOP_BAR", "TIMER", "PROGRESS_BAR"],
 
     TOP_BAR: {
       enabled: true,
@@ -52,8 +56,17 @@ const cartSpec = {
         unlockAt: 200000,                         // cents
         defaultText: "Add {{needed}} to unlock your free gift!",
         unlockedText: "🎉 Free gift unlocked!",
-        productId: "gid://shopify/ProductVariant/345t43",
-        productLabel: "Free gift",
+        rules: [
+          { label: "10% off", type: "DISCOUNT", unlockAt: 10000 },
+          {
+            label: "Free gift", type: "FREE_GIFT", unlockAt: 20000,
+            product: {                                            // ← required for FREE_GIFT; added FREE when crossed
+              productId: "gid://shopify/Product/889900",
+              variantId: "gid://shopify/ProductVariant/345t43",   // the variant actually added via /cart/add.js
+            }
+          },
+          { label: "Free shipping", type: "FREE_SHIPPING", unlockAt: 30000 },
+        ],
       },
       style: {
         barColor: "#6D28D9",
@@ -64,6 +77,8 @@ const cartSpec = {
 
   /* ── BODY ────────────────────────────────────────────────── */
   body: {
+
+    order: ["PRODUCTS_IN_CART"],
 
     PRODUCTS_IN_CART: {
       enabled: true,
@@ -85,6 +100,8 @@ const cartSpec = {
 
   /* ── FOOTER ──────────────────────────────────────────────── */
   footer: {
+
+    order: ["DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"],
 
     style: {
       bgColor: "#FFFFFF",
@@ -161,7 +178,7 @@ const cartSpec = {
     PAYMENT_METHODS: {
       enabled: false,
       props: {
-        icons: ["VISA", "MC", "UPI", "AMEX"],
+        icons: ["VISA", "MC", "UPI", "AMEX"],          // default selected
       },
       style: {
         textColor: "#666666",
