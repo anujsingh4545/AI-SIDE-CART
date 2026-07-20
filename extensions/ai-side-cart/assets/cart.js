@@ -177,15 +177,24 @@
       '<button class="sc-continue" data-action="close">continue shopping</button>';
   }
 
+  // when the cart is empty, Kaching hides every functional block and shows only the
+  // header + a centered empty state; only these block types render in that case
+  const EMPTY_ALLOWED = { TOP_BAR: true, PRODUCTS_IN_CART: true };
+
   function render() {
     snapshotInputs();
     applyTokens();
+    const isEmpty = !cart || !cart.items || cart.items.length === 0;
+    host.classList.toggle("sc-empty-cart", isEmpty);   // CSS hooks off the light-DOM host
     ["header", "body", "footer"].forEach(function (region) {
       const host = $("sc-" + region);
       const blocks = spec[region] || {};
       if (blocks.style) host.style.cssText = styleVars(blocks.style);
       host.innerHTML = Object.keys(blocks)
-        .filter(function (blockKey) { return blockKey !== "style" && blocks[blockKey] && blocks[blockKey].enabled && registry[blockKey]; })
+        .filter(function (blockKey) {
+          return blockKey !== "style" && blocks[blockKey] && blocks[blockKey].enabled && registry[blockKey] &&
+            (!isEmpty || EMPTY_ALLOWED[blockKey]);   // suppress functional blocks on an empty cart
+        })
         .map(function (blockKey) { return wrap(blockKey, blocks[blockKey], safe(registry[blockKey], blocks[blockKey])); })
         .join("");
     });
@@ -270,6 +279,11 @@
   const TAG_ICON =
     '<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">' +
     '<path fill-rule="evenodd" clip-rule="evenodd" d="M7 0h3a2 2 0 012 2v3a1 1 0 01-.3.7l-6 6a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4l6-6A1 1 0 017 0zm2 2a1 1 0 102 0 1 1 0 00-2 0z"/></svg>';
+  const BAG_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>' +
+    '<path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
 
   function lineHtml(item, line, blockProps) {
     const gift = item.properties && item.properties._sc_gift;
@@ -320,7 +334,8 @@
   function PRODUCTS_IN_CART(block) {
     const p = block.props || {};
     if (!cart || !cart.items || !cart.items.length) {
-      return '<p class="sc-empty">' + esc(p.emptyText || "Your cart is empty.") + "</p>";
+      return '<div class="sc-empty">' + BAG_ICON +
+        '<span>' + esc(p.emptyText || "Your cart is empty.") + "</span></div>";
     }
     return '<ul class="sc-lines">' + cart.items.map(function (item, i) {
       return lineHtml(item, i + 1, p);
