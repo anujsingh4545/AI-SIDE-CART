@@ -233,9 +233,17 @@
   }
 
   /* §3 products + writes */
+  // dim + disable the checkout and apply-discount buttons while any of OUR writes is
+  // in flight (Kaching-style "cart is updating"); driven purely by pausedWriteDepth
+  function reflectBusy() {
+    const drawer = $("side-cart");
+    if (drawer) drawer.classList.toggle("sc-busy", pausedWriteDepth > 0);
+  }
+
   function pausedWrite(path, body) {
     pausedWriteDepth += 1;
     lastOwnWriteAt = Date.now();   // so the PerformanceObserver net (§4) ignores our own writes
+    reflectBusy();
     return _fetch(ctx.root + path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Side-Cart": "1" },
@@ -246,6 +254,7 @@
       return null;
     }).finally(function () {
       pausedWriteDepth -= 1;
+      reflectBusy();
     });
   }
 
@@ -255,11 +264,12 @@
   }
 
   const TRASH_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m-9 0v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6"/></svg>';
+    '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+    '<path d="M14 3h-3.53a3.07 3.07 0 00-.6-1.65C9.44.82 8.8.5 8 .5s-1.44.32-1.87.85A3.06 3.06 0 005.53 3H2a.5.5 0 000 1h1.25v10c0 .28.22.5.5.5h8.5a.5.5 0 00.5-.5V4H14a.5.5 0 000-1zM6.91 1.98c.23-.29.58-.48 1.09-.48s.85.19 1.09.48c.2.24.3.6.36 1.02h-2.9c.05-.42.17-.78.36-1.02zm4.84 11.52h-7.5V4h7.5v9.5z"/>' +
+    '<path d="M6.55 5.25a.5.5 0 00-.5.5v6a.5.5 0 001 0v-6a.5.5 0 00-.5-.5zM9.45 5.25a.5.5 0 00-.5.5v6a.5.5 0 001 0v-6a.5.5 0 00-.5-.5z"/></svg>';
   const TAG_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg>';
+    '<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">' +
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M7 0h3a2 2 0 012 2v3a1 1 0 01-.3.7l-6 6a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4l6-6A1 1 0 017 0zm2 2a1 1 0 102 0 1 1 0 00-2 0z"/></svg>';
 
   function lineHtml(item, line, blockProps) {
     const gift = item.properties && item.properties._sc_gift;
@@ -297,8 +307,12 @@
     const remove = gift ? ""
       : '<button class="sc-remove" data-action="remove" data-line="' + line + '" aria-label="Remove">' + TRASH_ICON + "</button>";
 
+    const titleHtml = item.url
+      ? '<a class="sc-line-title" href="' + esc(item.url) + '">' + esc(item.product_title) + "</a>"
+      : '<span class="sc-line-title">' + esc(item.product_title) + "</span>";
+
     return '<li class="sc-line">' + img +
-      '<div class="sc-line-main"><span class="sc-line-title">' + esc(item.product_title) + "</span>" +
+      '<div class="sc-line-main">' + titleHtml +
       controls + "</div>" +
       '<div class="sc-line-side">' + price + savePill + remove + "</div></li>";
   }

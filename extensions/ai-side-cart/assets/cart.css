@@ -9,7 +9,7 @@
   --sc-line: #eee; --sc-muted: #8a8a8a;
   --sc-title: #111; --sc-title-size: 14px; --sc-font-size: 14px;
   --sc-original: #999; --sc-discounted: #111;
-  --sc-badge-text: #2e7d32; --sc-badge-bg: #e7f6ec;
+  --sc-badge-text: #079455; --sc-badge-bg: #dcfae6;
   color: var(--sc-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -62,7 +62,8 @@
 .sc-line:last-child { border-bottom: 0; }
 .sc-img { width: var(--sc-img); height: var(--sc-img); object-fit: cover; border-radius: var(--sc-radius); background: #f3f3f3; border: 1px solid var(--sc-line); flex: none; }
 .sc-line-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.sc-line-title { color: var(--sc-title); font-weight: 700; font-size: 15px; line-height: 1.3; }
+.sc-line-title { color: var(--sc-title); font-weight: 700; font-size: 15px; line-height: 1.3; text-decoration: none; }
+a.sc-line-title:hover { text-decoration: underline; }
 .sc-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sc-variant { color: var(--sc-muted); font-size: 13px; }
 .sc-variant-select { height: 36px; border: 1px solid var(--sc-border); border-radius: 8px; background-color: #fff;
@@ -79,20 +80,24 @@
 .sc-line-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; text-align: right; }
 .sc-price { font-weight: 700; font-size: 15px; white-space: nowrap; }
 .sc-price-was { color: var(--sc-original); font-weight: 400; font-size: 13px; text-decoration: line-through; white-space: nowrap; }
-.sc-save { display: inline-flex; align-items: center; gap: 4px; color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 8px; white-space: nowrap; }
-.sc-save svg { width: 13px; height: 13px; }
-.sc-remove { background: none; border: 0; padding: 4px; cursor: pointer; color: var(--sc-muted); border-radius: 6px; line-height: 0; }
+.sc-save { display: inline-flex; align-items: center; gap: 4px; color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+.sc-save svg { width: 11px; height: 11px; flex: none; }
+.sc-remove { background: none; border: 0; padding: 4px; cursor: pointer; color: #3f4b5b; border-radius: 6px; line-height: 0; }
 .sc-remove:hover { color: #d32f2f; }
-.sc-remove svg { width: 18px; height: 18px; display: block; }
-.sc-badge { color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.sc-remove svg { width: 16px; height: 16px; display: block; }
+.sc-badge { color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; }
 .sc-empty { text-align: center; color: var(--sc-muted); padding: 48px 0; font-size: 15px; }
 
 /* DISCOUNT_CODE */
 .sc-disc-row { display: flex; gap: 10px; }
 .sc-disc-row input { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--sc-border); border-radius: 10px; font-size: 14px; color: var(--sc-text); }
 .sc-disc-row input:focus { outline: none; border-color: var(--sc-accent); }
-.sc-apply { height: 44px; padding: 0 22px; border: 0; border-radius: 10px; background: var(--sc-accent); color: var(--sc-accent-text); cursor: pointer; font-weight: 600; font-size: 14px; }
+.sc-apply { height: 44px; padding: 0 22px; border: 0; border-radius: 10px; background: var(--sc-accent); color: var(--sc-accent-text); cursor: pointer; font-weight: 600; font-size: 14px; transition: opacity .15s; }
 .sc-apply:hover { filter: brightness(1.05); }
+
+/* while a cart write is in flight, dim + disable the primary actions (Kaching-style) */
+#side-cart.sc-busy .sc-checkout,
+#side-cart.sc-busy .sc-apply { opacity: .5; pointer-events: none; cursor: default; }
 .sc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .sc-chip { display: inline-flex; align-items: center; gap: 6px; color: var(--sc-badge-text); background: var(--sc-badge-bg); padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .sc-chip button { border: 0; background: none; cursor: pointer; color: var(--sc-badge-text); font-size: 12px; line-height: 1; }
@@ -114,7 +119,7 @@
 .sc-discounted { color: var(--sc-discounted); }
 
 /* CHECKOUT_BUTTON */
-.sc-checkout { display: block; width: 100%; padding: 16px; border: 0; cursor: pointer; border-radius: 12px; background: var(--sc-accent); color: var(--sc-accent-text); font-size: 16px; font-weight: 700; letter-spacing: .01em; }
+.sc-checkout { display: block; width: 100%; padding: 16px; border: 0; cursor: pointer; border-radius: 12px; background: var(--sc-accent); color: var(--sc-accent-text); font-size: 16px; font-weight: 700; letter-spacing: .01em; transition: opacity .15s; }
 .sc-checkout:hover { filter: brightness(1.06); }
 .sc-continue { display: block; width: 100%; margin-top: 12px; background: none; border: 0; cursor: pointer; color: var(--sc-text); font-weight: 600; font-size: 14px; text-align: center; }
 .sc-continue:hover { text-decoration: underline; }
