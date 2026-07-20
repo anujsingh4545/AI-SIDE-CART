@@ -5,7 +5,7 @@
      ship `div:empty{display:none}` (e.g. Dawn's base.css) would hide the whole widget */
   display: block !important;
   --sc-bg: #fff; --sc-text: #111; --sc-accent: #6d28d9; --sc-accent-text: #fff;
-  --sc-radius: 12px; --sc-img: 88px; --sc-gap: 12px; --sc-border: #e6e6e6;
+  --sc-radius: 12px; --sc-img: 14px; --sc-gap: 12px; --sc-border: #e6e6e6;
   --sc-line: #eee; --sc-muted: #8a8a8a;
   --sc-title: #111; --sc-title-size: 14px; --sc-font-size: 14px;
   --sc-original: #999; --sc-discounted: #111;
@@ -26,6 +26,11 @@
   box-shadow: -10px 0 40px rgba(0,0,0,.18); font-size: var(--sc-font-size); line-height: 1.4;
 }
 :host(.sc-open) #side-cart { transform: none; }
+/* AI chat open (desktop): the chat dock takes the right edge (380px), pushing the open
+   cart left by exactly that width. Mobile keeps the full-cover chat — no shift. */
+@media (min-width: 900px) {
+  :host(.sc-open.sc-chat-shifted) #side-cart { transform: translateX(-380px); }
+}
 :host(.sc-open) #sc-overlay { opacity: 1; pointer-events: auto; }
 /* Layout: blocks carry NO padding of their own. Each region is a grid container that
    owns the padding, and the gap provides consistent spacing between blocks. */
@@ -60,7 +65,7 @@
 
 /* PRODUCTS_IN_CART */
 .sc-lines { list-style: none; margin: 0; padding: 0; }
-.sc-line { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--sc-line); }
+.sc-line { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--sc-line); }
 .sc-line:last-child { border-bottom: 0; }
 .sc-img { width: var(--sc-img); height: var(--sc-img); object-fit: cover; border-radius: var(--sc-radius); background: #f3f3f3; border: 1px solid var(--sc-line); flex: none; }
 .sc-line-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -164,4 +169,14 @@ a.sc-line-title:hover { text-decoration: underline; }
 /* TRUST_BADGES / PAYMENT_METHODS */
 .sc-trust { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; color: var(--sc-muted); font-size: 12px; }
 .sc-pay { display: flex; justify-content: center; gap: 6px; }
+
+/* CHAT_LAUNCHER — black pill opening the AI chat dock; colors come from the block's
+   style (bgColor/textColor/borderRadius) via the standard --sc-* wrapper vars */
+.sc-chat-launcher { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; cursor: pointer; border-radius: var(--sc-radius); background: var(--sc-bg); color: var(--sc-text); text-align: left; font-family: inherit; }
+.sc-chat-launcher:hover { filter: brightness(1.12); }
+.sc-chat-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--sc-accent); color: var(--sc-accent-text); display: flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
+.sc-chat-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.sc-chat-title { font-weight: 700; font-size: 14px; }
+.sc-chat-subtitle { font-size: 12px; opacity: .75; }
+.sc-chat-chevron { opacity: .7; font-size: 16px; flex: none; }
 .sc-pay span { border: 1px solid var(--sc-border); border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 600; color: var(--sc-muted); background: var(--sc-bg); }

@@ -2,17 +2,25 @@
 {%- if spec -%}
   <script type="application/json" id="sc-spec">{{ spec.value | json }}</script>
 {%- endif -%}
+{%- assign chat_spec = app.metafields.cart.published_chat_spec -%}
+{%- if chat_spec -%}
+  <script type="application/json" id="sc-chat-spec">{{ chat_spec.value | json }}</script>
+{%- endif -%}
 <script type="application/json" id="sc-ctx">{
   "root":        {{ routes.root_url | json }},
   "moneyFormat": {{ shop.money_format | json }},
   "currency":    {{ cart.currency.iso_code | json }},
   "locale":      {{ request.locale.iso_code | json }},
   "checkoutUrl": "/checkout",
-  "cssUrl":      {{ 'cart.css' | asset_url | json }}
+  "cssUrl":      {{ 'cart.css' | asset_url | json }},
+  "chatUrl":     "/apps/ai-cart/chat",
+  "chatCssUrl":  {{ 'chat.css' | asset_url | json }}
 }</script>
 <div id="sc-root"></div>
 <script src="{{ 'cart-spec.js' | asset_url }}" defer></script>
+<script src="{{ 'chat-spec.js' | asset_url }}" defer></script>
 <script src="{{ 'cart.js' | asset_url }}" defer></script>
+<script src="{{ 'chat.js' | asset_url }}" defer></script>
 
 {% schema %}
 {

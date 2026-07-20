@@ -454,7 +454,7 @@
     PRODUCTS_IN_CART: "sc-products", DISCOUNT_CODE: "sc-discount-code",
     ORDER_NOTES: "sc-order-notes", SUBTOTAL: "sc-subtotal",
     CHECKOUT_BUTTON: "sc-checkout-button", TRUST_BADGES: "sc-trust-badges",
-    PAYMENT_METHODS: "sc-payment-methods",
+    PAYMENT_METHODS: "sc-payment-methods", CHAT_LAUNCHER: "sc-chat-launcher",
   };
 
   function defineBlocks(classes) {   // classes: { "sc-top-bar": ScTopBar, ... } built at boot
@@ -532,6 +532,34 @@
       return '<div class="sc-pay">' + icons.map(function (label) {
         return "<span>" + esc(label) + "</span>";
       }).join("") + "</div>";
+    }
+  }
+
+  class ScChatLauncher extends SideCartBlock {
+    template() {
+      // fail-closed: chat runtime absent (script failed / chat spec missing) → hide entirely
+      if (!window.SideCartChat) return "";
+      const blockProps = this.props;
+      return '<button class="sc-chat-launcher" data-action="open-chat">' +
+        '<span class="sc-chat-avatar">' + esc(blockProps.avatarEmoji || "◆") + "</span>" +
+        '<span class="sc-chat-text"><span class="sc-chat-title">' + esc(blockProps.title) + "</span>" +
+        (blockProps.subtitle ? '<span class="sc-chat-subtitle">' + esc(blockProps.subtitle) + "</span>" : "") +
+        "</span><span class=\"sc-chat-chevron\">›</span></button>";
+    }
+
+    mounted() {
+      // chat.js loads AFTER cart.js: first render may precede window.SideCartChat.
+      // Re-render once when the chat runtime announces itself.
+      const self = this;
+      if (!window.SideCartChat) {
+        document.addEventListener("sc-chat:ready", function () { self.update(); }, { once: true });
+      }
+    }
+
+    get actions() {
+      return { click: {
+        "open-chat": function () { if (window.SideCartChat) window.SideCartChat.open(); },
+      } };
     }
   }
 
@@ -1232,6 +1260,7 @@
       "sc-trust-badges": ScTrustBadges, "sc-payment-methods": ScPaymentMethods,
       "sc-timer": ScTimer, "sc-progress-bar": ScProgressBar,
       "sc-products": ScProducts, "sc-discount-code": ScDiscountCode, "sc-order-notes": ScOrderNotes,
+      "sc-chat-launcher": ScChatLauncher,
     });
 
     ["header", "body", "footer"].forEach(function (region) {
@@ -1276,6 +1305,11 @@
       const empty = !store.cart || store.cart.item_count === 0;
       host.classList.toggle("sc-empty-cart", empty);
     });
+
+    // AI chat dock (separate runtime) announces open/close on document; on desktop the
+    // dock takes the right edge, so the cart shifts itself left (CSS is media-gated).
+    document.addEventListener("sc-chat:open", function () { host.classList.add("sc-chat-shifted"); });
+    document.addEventListener("sc-chat:close", function () { host.classList.remove("sc-chat-shifted"); });
 
     new CartInterceptor(store, openDrawer).start();
     new CartMutationObserverNet(store, openDrawer).start();

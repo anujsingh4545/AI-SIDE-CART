@@ -62,6 +62,16 @@ window.__SC_SPEC__ = {
   },
   footer: {
     style: { bgColor: "#FFFFFF", verticalSpacing: 10 },
+    CHAT_LAUNCHER: {
+      order: 0,
+      enabled: true,
+      props: {
+        title: "Chat with our AI stylist",
+        subtitle: "Get pairing ideas, size & order help",
+        avatarEmoji: "◆",
+      },
+      style: { bgColor: "#111111", textColor: "#FFFFFF", borderRadius: 14 },
+    },
     DISCOUNT_CODE: {
       order: 1,
       enabled: true,
@@ -74,7 +84,7 @@ window.__SC_SPEC__ = {
     },
     ORDER_NOTES: {
       order: 2,
-      enabled: true,
+      enabled: false,
       props: { title: "Add special instructions", textAreaPlaceholder: "Your order notes" },
       style: { titleColor: "#111111", titleSize: 12 },
     },

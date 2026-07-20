@@ -1,0 +1,89 @@
+/* AI Chat Dock — injected INTO the chat shadow root. Tokens: --scc-* (set on :host by boot). */
+:host {
+  display: block !important;
+  --scc-bg: #fff; --scc-text: #111; --scc-accent: #6d28d9; --scc-accent-text: #fff;
+  --scc-radius: 12px; --scc-line: #e6e6e6; --scc-muted: #8a8a8a; --scc-surface: #fff;
+  /* composer pill geometry — send radius derives from these (inner = outer − padding) */
+  --scc-composer-radius: 14px; --scc-composer-pad: 4px;
+  color: var(--scc-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px; line-height: 1.45;
+}
+*, *::before, *::after { box-sizing: border-box; }
+
+/* The dock slides in from off-screen right by its FULL width with the SAME duration
+   and easing as the cart's shift (.28s cubic-bezier(.4,0,.2,1)) — the two panels move
+   in lockstep, so the chat reads as physically pushing the cart leftward. */
+.scc-dock {
+  position: fixed; top: 0; height: 100%; right: 0; width: 100vw;
+  background: var(--scc-bg); z-index: 2147483647;
+  display: flex; flex-direction: column;
+  visibility: hidden; transform: translateX(100%);
+  transition: transform .28s cubic-bezier(.4,0,.2,1), visibility 0s linear .28s;
+  box-shadow: -1px 0 0px rgba(0,0,0,.14);
+}
+:host(.scc-open) .scc-dock {
+  visibility: visible; transform: none;
+  transition: transform .28s cubic-bezier(.4,0,.2,1);
+}
+@media (min-width: 900px) {
+  .scc-dock { right: 0; width: min(100vw - 480px, 380px); }
+}
+
+/* header */
+.scc-header { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--scc-surface); box-shadow: 0 1px 0 var(--scc-line); }
+/* same close style as the cart's .sc-close: plain glyph, no bordered circle */
+.scc-close { background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--scc-text); padding: 4px; border-radius: 8px; flex: none; }
+.scc-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--scc-accent); color: var(--scc-accent-text); display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+.scc-head-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.scc-title { font-weight: 700; font-size: 15px; }
+.scc-status { font-size: 12px; color: var(--scc-muted); }
+.scc-status::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #22a06b; margin-right: 5px; }
+
+/* messages */
+.scc-messages { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+.scc-msg { max-width: 85%; padding: 10px 14px; border-radius: var(--scc-radius); white-space: pre-wrap; word-wrap: break-word; }
+.scc-msg.assistant { align-self: flex-start; background: var(--scc-surface); border: 1px solid var(--scc-line); border-top-left-radius: 4px; }
+.scc-msg.user { align-self: flex-end; background: var(--scc-accent); color: var(--scc-accent-text); border-bottom-right-radius: 4px; }
+.scc-day { align-self: center; font-size: 12px; color: var(--scc-muted); }
+
+/* initial (empty) state — hero fills the free space, suggestions sit above the composer */
+.scc-hero { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 16px; }
+.scc-hero-avatar { width: 72px; height: 72px; border-radius: 50%; background: var(--scc-accent); color: var(--scc-accent-text); display: flex; align-items: center; justify-content: center; font-size: 30px; }
+.scc-hero-title { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.scc-hero-subtitle { font-size: 14px; color: var(--scc-muted); max-width: 300px; line-height: 1.5; }
+.scc-try { display: flex; flex-direction: column; gap: 10px; }
+.scc-try-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--scc-muted); }
+.scc-suggestion { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: var(--scc-surface); border: 1px solid var(--scc-line); border-radius: var(--scc-radius); padding: 14px 16px; font-size: 14px; color: var(--scc-text); text-align: left; cursor: pointer; }
+.scc-suggestion:hover { border-color: var(--scc-accent); }
+.scc-sugg-chevron { color: var(--scc-muted); font-size: 16px; flex: none; }
+
+/* typing indicator */
+.scc-typing { align-self: flex-start; display: flex; gap: 4px; padding: 12px 14px; background: var(--scc-surface); border: 1px solid var(--scc-line); border-radius: var(--scc-radius); border-top-left-radius: 4px; }
+.scc-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--scc-muted); animation: scc-blink 1.2s infinite; }
+.scc-typing i:nth-child(2) { animation-delay: .2s; }
+.scc-typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes scc-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+/* product cards */
+.scc-products { display: flex; flex-direction: column; gap: 8px; max-width: 85%; }
+.scc-product { display: flex; align-items: center; gap: 10px; background: var(--scc-surface); border: 1px solid var(--scc-line); border-radius: var(--scc-radius); padding: 10px; }
+.scc-product-img { width: 48px; height: 48px; border-radius: 8px; background: #f3f3f3; object-fit: cover; flex: none; }
+.scc-product-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.scc-product-title { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scc-product-price { font-size: 12px; color: var(--scc-muted); }
+.scc-product-add { flex: none; border: 0; background: var(--scc-accent); color: var(--scc-accent-text); border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.scc-product-add[disabled] { opacity: .6; cursor: default; }
+
+/* composer — one white pill bar; the round send button lives INSIDE it on the right */
+.scc-composer { flex: none; padding: 12px 14px; background: var(--scc-bg); box-shadow: 0 -1px 0 var(--scc-line); }
+.scc-inputbar { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--scc-surface); border: 1px solid var(--scc-line); border-radius: var(--scc-composer-radius); padding: var(--scc-composer-pad) var(--scc-composer-pad) var(--scc-composer-pad) 18px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.scc-inputbar:focus-within { border-color: var(--scc-accent); }
+.scc-input { flex: 1; border: 0; padding: 0; font-size: 14px; background: none; color: var(--scc-text); }
+.scc-input:focus { outline: none; }
+.scc-send { flex: none; width: 38px; height: 38px; border: 0; border-radius: calc(var(--scc-composer-radius) - var(--scc-composer-pad)); background: var(--scc-accent); color: var(--scc-accent-text); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.scc-send svg { width: 22px; height: 22px; }
+.scc-send .scc-square { display: none; }
+.scc-send[disabled] { opacity: .7; cursor: default; }
+.scc-send[disabled] .scc-arrow { display: none; }        /* streaming: arrow → stop square */
+.scc-send[disabled] .scc-square { display: block; }
