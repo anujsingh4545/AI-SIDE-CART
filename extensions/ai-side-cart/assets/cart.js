@@ -208,6 +208,7 @@
   /* §3 products + writes */
   function pausedWrite(path, body) {
     pausedWriteDepth += 1;
+    lastOwnWriteAt = Date.now();   // so the PerformanceObserver net (§4) ignores our own writes
     return _fetch(ctx.root + path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Side-Cart": "1" },
@@ -350,6 +351,41 @@
 
   function urlNeverOpensDrawer(url) { return /[?&]opens_cart=never/.test(url); }
 
+  /* PerformanceObserver safety net. Request interception is primary (it alone can read
+     the add response body for the item-added diff), but a theme or app that dispatches
+     its add through a fetch/XHR reference captured BEFORE our defer-loaded script patched
+     window.fetch would bypass interception entirely. The resource-timing observer sees
+     every /cart/* request regardless of HOW it was dispatched, so it catches those adds
+     and still opens + refreshes the drawer. Two timestamps keep the paths from colliding:
+       · lastOwnWriteAt   — set by pausedWrite; the observer ignores OUR writes
+       · lastCartReactionAt — set by whichever path reacts first; the observer skips a
+                              mutation the interceptor already handled (no double reaction). */
+  var lastOwnWriteAt = 0;
+  var lastCartReactionAt = 0;
+
+  function reactToCartMutationUrl(url) {
+    try {
+      if (!url || classifyEndpoint(url) == null) return;      // only add/change/update/clear
+      if (/[?&]side_cart_ignore=true/.test(url) || /[?&]ocu=/.test(url)) return;
+      var now = Date.now();
+      if (now - lastOwnWriteAt < 2500) return;                // our own drawer-driven write
+      if (now - lastCartReactionAt < 1200) return;            // interception already reacted
+      lastCartReactionAt = now;
+      if (!urlNeverOpensDrawer(url) && !/\/cart\/?$/.test(location.pathname)) openDrawer();
+      refreshCart();
+    } catch (reactionError) { /* never throw into theme code */ }
+  }
+
+  function installCartMutationObserver() {
+    if (typeof PerformanceObserver === "undefined") return;
+    try {
+      var observer = new PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (entry) { reactToCartMutationUrl(entry.name); });
+      });
+      observer.observe({ type: "resource", buffered: false });
+    } catch (observerError) { /* PO unsupported → fetch/XHR interception remains primary */ }
+  }
+
   // → null (ignore) or { endpoint, neverOpen }
   function evaluateRequest(requestInfo) {
     if (String(requestInfo.method || "GET").toUpperCase() !== "POST") return Promise.resolve(null);
@@ -368,6 +404,7 @@
   function handleCartMutationResponse(response, verdict) {
     try {
       if (!response.ok) return Promise.resolve();
+      lastCartReactionAt = Date.now();   // tells the PerformanceObserver net (§4) this add is already handled
       var onCartPage = /\/cart\/?$/.test(location.pathname);
       if (!verdict.neverOpen && !onCartPage) openDrawer();
       var diffDone = Promise.resolve();
@@ -898,6 +935,7 @@
      do not). Interceptor closures read their config lazily, so patching here is safe. */
   installFetchInterceptor();
   installXhrInterceptor();
+  installCartMutationObserver();   // safety net for adds that bypass the fetch/XHR patch
   installCartIconClickDetector();
   disableNativeCart();
   startTimerEngine();
