@@ -828,9 +828,11 @@
       case "remove": changeQty(actionTarget.dataset.line, 0); break;
       case "apply-discount": {
         var discountInput = $("sc-disc-input");
-        if (discountInput && discountInput.value.trim()) {
+        var discountCode = discountInput && discountInput.value.trim();
+        if (discountCode) {
           preservedInputs.discountCode = "";
-          applyDiscount(discountInput.value.trim());
+          discountInput.value = "";
+          applyDiscount(discountCode);
         }
         break;
       }
