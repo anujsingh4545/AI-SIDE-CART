@@ -58,11 +58,9 @@
   }
 
   // stubs — real implementations land in Tasks 5–8; render() calls them from day one
-  function checkFreeGift() {}                       // Task 6
   function snapshotInputs() {}                       // Task 8
   function restoreInputs() {}                        // Task 8
   function timerText() { return ""; }                // Task 7
-  function progressVars() { return {}; }             // Task 6
 
   function tvars() {
     var vars = {
@@ -127,6 +125,7 @@
     SUBTOTAL: SUBTOTAL,
     CHECKOUT_BUTTON: CHECKOUT_BUTTON,
     PRODUCTS_IN_CART: PRODUCTS_IN_CART,
+    PROGRESS_BAR: PROGRESS_BAR,
   };
 
   function TOP_BAR(block) {
@@ -195,6 +194,7 @@
     if (!next) return;                 // fetch failed → keep last good cart
     cart = next;
     window.__sideCartLast = next;      // the add-diff (Task 4) depends on this
+    trackUnlockCrossings();
     checkFreeGift();
     render();
     document.dispatchEvent(new CustomEvent("side-cart:updated", { detail: { cart: cart } }));
@@ -546,7 +546,123 @@
       });
     });
   }
-  /* §6 progress + free gift */
+  /* §6 progress bar + free-gift engine */
+  var justUnlockedFlash = null;   // { label, expiresAt } — brief unlockedText flash
+  var previousProgressTotal = 0;
+
+  function progressBlock() {
+    var block = spec.header && spec.header.PROGRESS_BAR;
+    return block && block.enabled && block.props && Array.isArray(block.props.rules) ? block : null;
+  }
+
+  function sortedProgressRules() {
+    var block = progressBlock();
+    if (!block) return [];
+    return block.props.rules.slice().sort(function (a, b) { return a.unlockAt - b.unlockAt; });
+  }
+
+  function progressTotal() {
+    var block = progressBlock();
+    if (!cart || !block) return 0;
+    return block.props.unlockedBy === "QUANTITY" ? cart.item_count : cart.total_price;
+  }
+
+  function formatProgressAmount(amount) {
+    var block = progressBlock();
+    return block && block.props.unlockedBy === "QUANTITY" ? String(amount) : money(amount);
+  }
+
+  function progressVars() {
+    var rules = sortedProgressRules();
+    if (!rules.length) return {};
+    var total = progressTotal();
+    var nextRule = rules.find(function (rule) { return total < rule.unlockAt; });
+    return {
+      needed: nextRule ? formatProgressAmount(nextRule.unlockAt - total) : "",
+      next: nextRule ? nextRule.label : "",
+      unlocked: justUnlockedFlash ? justUnlockedFlash.label : "",
+    };
+  }
+
+  // called from setCart (Step 2) — detects a threshold crossing for the flash message
+  function trackUnlockCrossings() {
+    var rules = sortedProgressRules();
+    if (!rules.length) return;
+    var total = progressTotal();
+    var crossedRule = rules.find(function (rule) {
+      return previousProgressTotal < rule.unlockAt && total >= rule.unlockAt;
+    });
+    previousProgressTotal = total;
+    if (crossedRule) {
+      justUnlockedFlash = { label: crossedRule.label, expiresAt: Date.now() + 3000 };
+      setTimeout(function () { justUnlockedFlash = null; render(); }, 3000);
+    }
+  }
+
+  function PROGRESS_BAR(block) {
+    var rules = sortedProgressRules();
+    if (!rules.length || !cart) return "";
+    var blockProps = block.props;
+    var total = progressTotal();
+    var maxUnlockAt = rules[rules.length - 1].unlockAt;
+    var fillPercent = Math.min(100, (total / maxUnlockAt) * 100);
+    var nextRule = rules.find(function (rule) { return total < rule.unlockAt; });
+    var messageTemplate;
+    if (!nextRule) messageTemplate = blockProps.allUnlockedText;
+    else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
+    else messageTemplate = blockProps.defaultText;
+    var milestones = rules.map(function (rule) {
+      var leftPercent = Math.min(100, (rule.unlockAt / maxUnlockAt) * 100);
+      var reached = total >= rule.unlockAt;
+      return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
+        '" style="left:' + leftPercent + '%" title="' + esc(rule.label) + '"></span>';
+    }).join("");
+    return '<div class="sc-progress"><p class="sc-progress-text">' + fill(messageTemplate, tvars()) +
+      '</p><div class="sc-track"><div class="sc-fill" style="width:' + fillPercent + '%"></div>' +
+      milestones + "</div></div>";
+  }
+
+  /* Free-gift engine. JS adds/removes the gift LINE; a Shopify automatic discount
+     makes its PRICE zero — money is never client-side. The `_sc_gift` line property
+     is both the FREE badge marker and how this loop finds its own additions. */
+  var freeGiftBusy = false;    // re-entry guard: checkFreeGift runs inside setCart
+
+  function numericIdFromGid(gid) {
+    var match = String(gid || "").match(/(\d+)$/);
+    return match ? Number(match[1]) : null;
+  }
+
+  function checkFreeGift() {
+    if (freeGiftBusy || !cart) return;
+    var giftRules = sortedProgressRules().filter(function (rule) {
+      return rule.type === "FREE_GIFT" && rule.product;
+    });
+    if (!giftRules.length) return;
+    var total = progressTotal();
+    giftRules.forEach(function (rule) {
+      var giftVariantId = numericIdFromGid(rule.product.variantId);
+      if (!giftVariantId) return;
+      var giftLineIndex = cart.items.findIndex(function (line) {
+        return line.variant_id === giftVariantId && line.properties && line.properties._sc_gift;
+      });
+      if (total >= rule.unlockAt && giftLineIndex === -1) {
+        freeGiftBusy = true;
+        pausedWrite("cart/add.js", {
+          items: [{ id: giftVariantId, quantity: 1, properties: { _sc_gift: "true" } }],
+        }).then(function (added) {
+          freeGiftBusy = false;
+          if (added) refreshCart();   // state now matches → next check is a no-op
+        });
+      } else if (total < rule.unlockAt && giftLineIndex !== -1) {
+        freeGiftBusy = true;
+        pausedWrite("cart/change.js", { line: giftLineIndex + 1, quantity: 0 })
+          .then(function (nextCart) {
+            freeGiftBusy = false;
+            if (nextCart) setCart(nextCart);
+          });
+      }
+    });
+  }
   /* §7 timer */
   /* §8 footer blocks */
   /* §9 variant selector */
