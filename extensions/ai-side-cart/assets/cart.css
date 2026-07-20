@@ -86,3 +86,6 @@
 .sc-trust { display: flex; justify-content: center; gap: 16px; color: var(--sc-text); font-size: var(--sc-font-size); }
 .sc-pay { display: flex; justify-content: center; gap: 6px; }
 .sc-pay span { border: 1px solid var(--sc-border); border-radius: var(--sc-radius); padding: 2px 6px; font-size: var(--sc-font-size); color: var(--sc-text); background: var(--sc-bg); }
+
+/* count-sync: Dawn hides the bubble when empty; we force visibility to track count */
+.cart-count-bubble.sc-visible { visibility: visible !important; }

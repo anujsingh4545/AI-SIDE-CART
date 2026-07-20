@@ -59,7 +59,6 @@
 
   // stubs — real implementations land in Tasks 5–8; render() calls them from day one
   function checkFreeGift() {}                       // Task 6
-  function syncCartCount(count) {}                  // Task 5
   function snapshotInputs() {}                       // Task 8
   function restoreInputs() {}                        // Task 8
   function timerText() { return ""; }                // Task 7
@@ -525,7 +524,28 @@
       });
     });
   }
-  /* §5 count-sync */
+  /* §5 count-sync — we intercept silently, so the theme never learns about
+     programmatic changes; we update its own bubble ourselves. Extend per theme. */
+  var COUNT_SYNC_TARGETS = [
+    { selector: ".cart-count-bubble span[aria-hidden='true']", type: "text" },   // Dawn
+    { selector: "#CartCount, .header__cart-count",             type: "text" },
+    { selector: "[data-cart-count]", type: "attribute", attribute: "data-cart-count" },
+    { selector: ".cart-count-bubble", type: "toggle", showClass: "sc-visible" },  // Dawn dot
+  ];
+
+  var COUNT_SYNC_APPLIERS = {
+    text: function (el, count) { el.textContent = count; el.removeAttribute("hidden"); },
+    attribute: function (el, count, target) { el.setAttribute(target.attribute, count); },
+    toggle: function (el, count, target) { el.classList.toggle(target.showClass, count > 0); },
+  };
+
+  function syncCartCount(count) {
+    COUNT_SYNC_TARGETS.forEach(function (target) {
+      document.querySelectorAll(target.selector).forEach(function (el) {
+        try { COUNT_SYNC_APPLIERS[target.type](el, count, target); } catch (syncError) {}
+      });
+    });
+  }
   /* §6 progress + free gift */
   /* §7 timer */
   /* §8 footer blocks */
