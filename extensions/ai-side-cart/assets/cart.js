@@ -126,6 +126,7 @@
     TOP_BAR: TOP_BAR,
     SUBTOTAL: SUBTOTAL,
     CHECKOUT_BUTTON: CHECKOUT_BUTTON,
+    PRODUCTS_IN_CART: PRODUCTS_IN_CART,
   };
 
   function TOP_BAR(block) {
@@ -206,6 +207,64 @@
   refreshCart(); // boot: first paint
 
   /* §3 products + writes */
+  function pausedWrite(path, body) {
+    interceptorPaused = true;
+    return _fetch(ctx.root + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Side-Cart": "1" },
+      body: JSON.stringify(body),
+    }).then(function (res) {
+      return res.ok ? res.json() : null;
+    }).catch(function () {
+      return null;
+    }).finally(function () {
+      interceptorPaused = false;
+    });
+  }
+
+  function changeQty(line, qty) {
+    return pausedWrite("cart/change.js", { line: Number(line), quantity: Math.max(0, Number(qty)) })
+      .then(function (next) { next ? setCart(next) : refreshCart(); });
+  }
+
+  function variantHtml(item, p) {
+    if (!p.showVariantSelector || !item.variant_title) return "";
+    return '<span class="sc-variant">' + esc(item.variant_title) + "</span>";
+  }
+
+  function lineHtml(item, line, p) {
+    var gift = item.properties && item.properties._sc_gift;
+    var img = item.image
+      ? '<img class="sc-img" src="' + esc(item.image) + '" alt="" loading="lazy">'
+      : '<span class="sc-img"></span>';
+    var qty = !gift && p.showQuantitySelector
+      ? '<span class="sc-qty">' +
+        '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity - 1) + '" aria-label="Decrease">−</button>' +
+        "<span>" + item.quantity + "</span>" +
+        '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity + 1) + '" aria-label="Increase">+</button>' +
+        "</span>"
+      : "";
+    var price = gift
+      ? '<span class="sc-badge">FREE</span>'
+      : '<span class="sc-price">' + money(p.showSingleItemPrice ? item.final_price : item.final_line_price) + "</span>";
+    var remove = gift ? ""
+      : '<button class="sc-remove" data-action="remove" data-line="' + line + '">Remove</button>';
+    return '<li class="sc-line">' + img +
+      '<div class="sc-line-main"><span class="sc-line-title">' + esc(item.product_title) + "</span>" +
+      variantHtml(item, p) + qty + "</div>" +
+      '<div class="sc-line-side">' + price + remove + "</div></li>";
+  }
+
+  function PRODUCTS_IN_CART(block) {
+    var p = block.props || {};
+    if (!cart || !cart.items || !cart.items.length) {
+      return '<p class="sc-empty">' + esc(p.emptyText || "Your cart is empty.") + "</p>";
+    }
+    return '<ul class="sc-lines">' + cart.items.map(function (item, i) {
+      return lineHtml(item, i + 1, p);
+    }).join("") + "</ul>";
+  }
+
   /* §4 detect */
   /* §5 count-sync */
   /* §6 progress + free gift */
@@ -221,8 +280,10 @@
 
   function route(action, t, e) {
     switch (action) {
-      case "close": closeDrawer(); break;
+      case "qty": changeQty(t.dataset.line, Number(t.dataset.qty)); break;
+      case "remove": changeQty(t.dataset.line, 0); break;
       case "checkout": location.href = ctx.checkoutUrl || "/checkout"; break;
+      case "close": closeDrawer(); break;
     }
   }
 
