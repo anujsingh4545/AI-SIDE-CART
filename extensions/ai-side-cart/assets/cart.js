@@ -234,11 +234,6 @@
       .then(function (next) { next ? setCart(next) : refreshCart(); });
   }
 
-  function variantHtml(item, p) {
-    if (!p.showVariantSelector || !item.variant_title) return "";
-    return '<span class="sc-variant">' + esc(item.variant_title) + "</span>";
-  }
-
   function lineHtml(item, line, p) {
     var gift = item.properties && item.properties._sc_gift;
     var img = item.image
@@ -814,7 +809,64 @@
   root.addEventListener("blur", function (event) {
     if (event.target && event.target.id === "sc-notes") saveOrderNote(event.target.value);
   }, true);
-  /* §9 variant selector */
+  /* §9 variant selector — lazy per-handle product data, single-request swap */
+  var productCache = new Map();   // handle → {status, data}
+
+  function ensureProductLoaded(productHandle) {
+    if (!productHandle || productCache.has(productHandle)) return;
+    productCache.set(productHandle, { status: "pending" });
+    _fetch(ctx.root + "products/" + productHandle + ".js", { headers: { "X-Side-Cart": "1" } })
+      .then(function (response) {
+        if (!response.ok) throw new Error("product fetch " + response.status);
+        return response.json();
+      })
+      .then(function (productData) {
+        productCache.set(productHandle, { status: "ok", data: productData });
+        render();   // upgrade the static label to a live select
+      })
+      .catch(function () {
+        productCache.set(productHandle, { status: "error" });  // static label stays
+      });
+  }
+
+  function variantHtml(item, blockProps) {
+    if (!blockProps.showVariantSelector || !item.variant_title) return "";
+    var isGiftLine = item.properties && item.properties._sc_gift;
+    var staticLabel = '<span class="sc-variant">' + esc(item.variant_title) + "</span>";
+    if (isGiftLine) return staticLabel;
+    var cached = productCache.get(item.handle);
+    if (!cached) { ensureProductLoaded(item.handle); return staticLabel; }
+    if (cached.status !== "ok" || !Array.isArray(cached.data.variants) ||
+        cached.data.variants.length < 2) return staticLabel;
+    var options = cached.data.variants.map(function (variant) {
+      return '<option value="' + variant.id + '"' +
+        (variant.id === item.variant_id ? " selected" : "") +
+        (variant.available ? "" : " disabled") + ">" + esc(variant.title) + "</option>";
+    }).join("");
+    return '<select class="sc-variant-select" data-action="variant" ' +
+      'data-old-variant="' + item.variant_id + '" data-line-qty="' + item.quantity + '">' +
+      options + "</select>";
+  }
+
+  function swapVariant(oldVariantId, newVariantId, lineQuantity) {
+    if (!oldVariantId || !newVariantId || oldVariantId === newVariantId) return Promise.resolve();
+    var updates = {};
+    updates[oldVariantId] = 0;
+    updates[newVariantId] = lineQuantity;
+    return pausedWrite("cart/update.js", { updates: updates })
+      .then(function (nextCart) { nextCart ? setCart(nextCart) : refreshCart(); });
+  }
+
+  // <select> fires "change", not "click" — a second delegated listener on the same root
+  root.addEventListener("change", function (event) {
+    var selectEl = event.target.closest('[data-action="variant"]');
+    if (!selectEl) return;
+    swapVariant(
+      Number(selectEl.dataset.oldVariant),
+      Number(selectEl.value),
+      Number(selectEl.dataset.lineQty)
+    );
+  });
 
   root.addEventListener("click", function (e) {
     var t = e.target.closest("[data-action]");
