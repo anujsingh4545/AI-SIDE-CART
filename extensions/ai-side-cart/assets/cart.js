@@ -60,7 +60,6 @@
   // stubs — real implementations land in Tasks 5–8; render() calls them from day one
   function snapshotInputs() {}                       // Task 8
   function restoreInputs() {}                        // Task 8
-  function timerText() { return ""; }                // Task 7
 
   function tvars() {
     var vars = {
@@ -126,6 +125,7 @@
     CHECKOUT_BUTTON: CHECKOUT_BUTTON,
     PRODUCTS_IN_CART: PRODUCTS_IN_CART,
     PROGRESS_BAR: PROGRESS_BAR,
+    TIMER: TIMER,
   };
 
   function TOP_BAR(block) {
@@ -195,6 +195,7 @@
     cart = next;
     window.__sideCartLast = next;      // the add-diff (Task 4) depends on this
     trackUnlockCrossings();
+    maybeResetTimerOnAdd();
     checkFreeGift();
     render();
     document.dispatchEvent(new CustomEvent("side-cart:updated", { detail: { cart: cart } }));
@@ -210,6 +211,7 @@
   installXhrInterceptor();
   installCartIconClickDetector();
   disableNativeCart();
+  startTimerEngine();
 
   /* §3 products + writes */
   function pausedWrite(path, body) {
@@ -663,7 +665,84 @@
       }
     });
   }
-  /* §7 timer */
+  /* §7 timer — per-visitor deadline in a first-party cookie; one interval app-wide */
+  var TIMER_COOKIE_NAME = "_sc_timer_end";
+  var timerExpiryHandled = false;
+  var previousItemCount = null;
+
+  function enabledTimerBlock() {
+    var block = spec.header && spec.header.TIMER;
+    return block && block.enabled && block.props ? block : null;
+  }
+
+  function readTimerDeadline() {
+    var match = document.cookie.match(new RegExp("(?:^|; )" + TIMER_COOKIE_NAME + "=(\\d+)"));
+    return match ? Number(match[1]) : null;
+  }
+
+  function writeTimerDeadline(epochMs) {
+    document.cookie = TIMER_COOKIE_NAME + "=" + epochMs + ";path=/;max-age=86400;SameSite=Lax";
+  }
+
+  function stampFreshDeadline() {
+    var block = enabledTimerBlock();
+    if (!block) return;
+    writeTimerDeadline(Date.now() + (Number(block.props.timeLimit) || 30) * 60000);
+    timerExpiryHandled = false;
+  }
+
+  function timerText() {
+    var deadline = readTimerDeadline();
+    if (!deadline) return "";
+    var msLeft = Math.max(0, deadline - Date.now());
+    var minutes = String(Math.floor(msLeft / 60000)).padStart(2, "0");
+    var seconds = String(Math.floor((msLeft % 60000) / 1000)).padStart(2, "0");
+    return minutes + ":" + seconds;
+  }
+
+  function TIMER(block) {
+    var deadline = readTimerDeadline();
+    if (!deadline || Date.now() >= deadline) return "";   // renders nothing past expiry
+    // esc the whole title FIRST, then splice the live span in place of {{timer}}
+    var titleHtml = esc(block.props.title).replace(/\{\{\s*timer\s*\}\}/g,
+      '<span data-sc-timer>' + timerText() + "</span>");
+    return '<div class="sc-timer">' + titleHtml + "</div>";
+  }
+
+  function onTimerTick() {
+    var block = enabledTimerBlock();
+    if (!block) return;
+    var timerSpan = root.querySelector("[data-sc-timer]");
+    if (timerSpan) timerSpan.textContent = timerText();     // 1s tick touches ONE span
+    var deadline = readTimerDeadline();
+    if (deadline && Date.now() >= deadline && !timerExpiryHandled) {
+      timerExpiryHandled = true;
+      if (block.props.removeCartItemsTimerEnds && cart && cart.item_count > 0) {
+        pausedWrite("cart/clear.js", {}).then(function (clearedCart) {
+          if (clearedCart) setCart(clearedCart);
+        });
+      } else {
+        render();   // one full render so TIMER disappears
+      }
+    }
+  }
+
+  function startTimerEngine() {
+    if (!enabledTimerBlock()) return;    // no-op when the block is disabled
+    if (!readTimerDeadline()) stampFreshDeadline();
+    setInterval(onTimerTick, 1000);
+  }
+
+  // called from setCart: re-stamp the deadline when the item count GROWS
+  function maybeResetTimerOnAdd() {
+    var block = enabledTimerBlock();
+    var count = cart ? cart.item_count : 0;
+    if (block && block.props.resetTimerProductAddedToCart &&
+        previousItemCount != null && count > previousItemCount) {
+      stampFreshDeadline();
+    }
+    previousItemCount = count;
+  }
   /* §8 footer blocks */
   /* §9 variant selector */
 
