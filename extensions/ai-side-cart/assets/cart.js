@@ -814,17 +814,18 @@
     else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
     else messageTemplate = blockProps.defaultText;
     // Kaching-style ring markers ON the track, plain labels below, evenly distributed.
+    // The last marker/label is right-aligned to the track end so it isn't clipped at 100%.
     function markerPct(i) { return ((i + 1) / count) * 100; }
-    function labelShift(i) { return i === count - 1 ? "-100%" : "-50%"; }
+    function edgeShift(i) { return i === count - 1 ? "-100%" : "-50%"; }
     const markers = rules.map(function (rule, i) {
       const reached = total >= thresholds[i];
       return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
-        '" style="left:' + markerPct(i) + '%"></span>';
+        '" style="left:' + markerPct(i) + "%;transform:translate(" + edgeShift(i) + ',-50%)"></span>';
     }).join("");
     const labels = rules.map(function (rule, i) {
       const reached = total >= thresholds[i];
       return '<span class="sc-ms-label' + (reached ? " sc-done" : "") +
-        '" style="left:' + markerPct(i) + "%;transform:translateX(" + labelShift(i) + ')">' + esc(rule.label) + "</span>";
+        '" style="left:' + markerPct(i) + "%;transform:translateX(" + edgeShift(i) + ')">' + esc(rule.label) + "</span>";
     }).join("");
     // fill starts at the PREVIOUS width; render() bumps it to data-pct in a rAF so the
     // CSS width-transition actually animates (the element is recreated on every render)
