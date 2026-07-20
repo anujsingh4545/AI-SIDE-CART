@@ -19,7 +19,8 @@
 
   var cart = null;
   var notesOpen = false;
-  var interceptorPaused = false;
+  var pausedWriteDepth = 0;   // >0 while any of OUR cart writes is in flight
+  function interceptorIsPaused() { return pausedWriteDepth > 0; }
 
   root.innerHTML =
     '<div id="sc-overlay" data-action="close"></div>' +
@@ -208,7 +209,7 @@
 
   /* §3 products + writes */
   function pausedWrite(path, body) {
-    interceptorPaused = true;
+    pausedWriteDepth += 1;
     return _fetch(ctx.root + path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Side-Cart": "1" },
@@ -218,7 +219,7 @@
     }).catch(function () {
       return null;
     }).finally(function () {
-      interceptorPaused = false;
+      pausedWriteDepth -= 1;
     });
   }
 
