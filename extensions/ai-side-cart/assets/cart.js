@@ -57,10 +57,6 @@
     return out.replace(/<[^>]*>/g, ""); // some shops wrap the format in HTML spans
   }
 
-  // stubs — real implementations land in Tasks 5–8; render() calls them from day one
-  function snapshotInputs() {}                       // Task 8
-  function restoreInputs() {}                        // Task 8
-
   function tvars() {
     var vars = {
       cart_total: money(cart ? cart.total_price : 0),
@@ -126,6 +122,10 @@
     PRODUCTS_IN_CART: PRODUCTS_IN_CART,
     PROGRESS_BAR: PROGRESS_BAR,
     TIMER: TIMER,
+    DISCOUNT_CODE: DISCOUNT_CODE,
+    ORDER_NOTES: ORDER_NOTES,
+    TRUST_BADGES: TRUST_BADGES,
+    PAYMENT_METHODS: PAYMENT_METHODS,
   };
 
   function TOP_BAR(block) {
@@ -744,6 +744,76 @@
     previousItemCount = count;
   }
   /* §8 footer blocks */
+  function DISCOUNT_CODE(block) {
+    var blockProps = block.props || {};
+    var appliedChips = ((cart && cart.discount_codes) || [])
+      .filter(function (discount) { return discount.applicable !== false; })
+      .map(function (discount) {
+        return '<span class="sc-chip">' + esc(discount.code) +
+          '<button data-action="remove-discount" aria-label="Remove discount">✕</button></span>';
+      }).join("");
+    return '<div class="sc-discount"><div class="sc-disc-row">' +
+      '<input id="sc-disc-input" type="text" placeholder="' + esc(blockProps.placeholderTitle) + '">' +
+      '<button class="sc-apply" data-action="apply-discount">' + esc(blockProps.buttonText) + "</button>" +
+      '</div><div class="sc-chips">' + appliedChips + "</div></div>";
+  }
+
+  function applyDiscount(code) {
+    return pausedWrite("cart/update.js", { discount: code || "" })
+      .then(function (nextCart) { nextCart ? setCart(nextCart) : refreshCart(); });
+  }
+
+  function ORDER_NOTES(block) {
+    var blockProps = block.props || {};
+    var textareaHtml = notesOpen
+      ? '<textarea id="sc-notes" placeholder="' + esc(blockProps.textAreaPlaceholder) + '">' +
+        esc((cart && cart.note) || "") + "</textarea>"
+      : "";
+    return '<div class="sc-notes"><button class="sc-notes-toggle" data-action="toggle-notes">' +
+      esc(blockProps.title) + " " + (notesOpen ? "▴" : "▾") + "</button>" + textareaHtml + "</div>";
+  }
+
+  function saveOrderNote(noteText) {
+    return pausedWrite("cart/update.js", { note: noteText }); // useless-keys body → interceptor ignores it
+  }
+
+  function TRUST_BADGES(block) {
+    var badges = (block.props && block.props.badges) || [];
+    if (!badges.length) return "";
+    return '<div class="sc-trust">' + badges.map(function (badge) {
+      return "<span>" + esc(badge.title) + "</span>";
+    }).join("") + "</div>";
+  }
+
+  function PAYMENT_METHODS(block) {
+    var icons = (block.props && block.props.icons) || [];
+    if (!icons.length) return "";
+    return '<div class="sc-pay">' + icons.map(function (iconLabel) {
+      return "<span>" + esc(iconLabel) + "</span>";
+    }).join("") + "</div>";
+  }
+
+  /* input preservation — typed-but-unsubmitted text survives every innerHTML replace */
+  var preservedInputs = { discountCode: "", noteText: null };
+
+  function snapshotInputs() {
+    var discountInput = $("sc-disc-input");
+    if (discountInput) preservedInputs.discountCode = discountInput.value;
+    var notesTextarea = $("sc-notes");
+    if (notesTextarea) preservedInputs.noteText = notesTextarea.value;
+  }
+
+  function restoreInputs() {
+    var discountInput = $("sc-disc-input");
+    if (discountInput && preservedInputs.discountCode) discountInput.value = preservedInputs.discountCode;
+    var notesTextarea = $("sc-notes");
+    if (notesTextarea && preservedInputs.noteText != null) notesTextarea.value = preservedInputs.noteText;
+  }
+
+  // notes save on blur (capture phase — blur does not bubble)
+  root.addEventListener("blur", function (event) {
+    if (event.target && event.target.id === "sc-notes") saveOrderNote(event.target.value);
+  }, true);
   /* §9 variant selector */
 
   root.addEventListener("click", function (e) {
@@ -752,10 +822,20 @@
     route(t.dataset.action, t, e);
   });
 
-  function route(action, t, e) {
+  function route(action, actionTarget, event) {
     switch (action) {
-      case "qty": changeQty(t.dataset.line, Number(t.dataset.qty)); break;
-      case "remove": changeQty(t.dataset.line, 0); break;
+      case "qty": changeQty(actionTarget.dataset.line, Number(actionTarget.dataset.qty)); break;
+      case "remove": changeQty(actionTarget.dataset.line, 0); break;
+      case "apply-discount": {
+        var discountInput = $("sc-disc-input");
+        if (discountInput && discountInput.value.trim()) {
+          preservedInputs.discountCode = "";
+          applyDiscount(discountInput.value.trim());
+        }
+        break;
+      }
+      case "remove-discount": applyDiscount(""); break;
+      case "toggle-notes": notesOpen = !notesOpen; render(); break;
       case "checkout": location.href = ctx.checkoutUrl || "/checkout"; break;
       case "close": closeDrawer(); break;
     }
