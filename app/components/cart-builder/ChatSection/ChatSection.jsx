@@ -9,6 +9,7 @@ export default function ChatSection({ spec, onSpecChange }) {
   const fetcher = useFetcher();
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
+  const bottomRef = useRef(null);
 
   useEffect(() => {
     const el = messagesRef.current;
