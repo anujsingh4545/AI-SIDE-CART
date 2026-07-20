@@ -41,6 +41,170 @@
   });
 
   /* §2 render core */
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function money(cents) {
+    var amount = (Number(cents || 0) / 100).toFixed(2);
+    var whole = String(Math.round(Number(cents || 0) / 100));
+    var out = String(ctx.moneyFormat || "{{amount}}");
+    out = out.replace(/\{\{\s*amount_no_decimals[^}]*\}\}/g, whole)
+             .replace(/\{\{\s*amount[^}]*\}\}/g, amount);
+    return out.replace(/<[^>]*>/g, ""); // some shops wrap the format in HTML spans
+  }
+
+  // stubs — real implementations land in Tasks 5–8; render() calls them from day one
+  function checkFreeGift() {}                       // Task 6
+  function syncCartCount(count) {}                  // Task 5
+  function snapshotInputs() {}                       // Task 8
+  function restoreInputs() {}                        // Task 8
+  function timerText() { return ""; }                // Task 7
+  function progressVars() { return {}; }             // Task 6
+
+  function tvars() {
+    var vars = {
+      cart_total: money(cart ? cart.total_price : 0),
+      count: cart ? cart.item_count : 0,
+      timer: timerText(),
+    };
+    var progress = progressVars();
+    for (var progressKey in progress) vars[progressKey] = progress[progressKey];
+    return vars;
+  }
+
+  // Escape the WHOLE template first, then substitute already-safe values.
+  function fill(tpl, vars) {
+    return esc(tpl).replace(/\{\{\s*(\w+)\s*\}\}/g, function (_, key) {
+      return key in vars ? esc(vars[key]) : "—";
+    });
+  }
+
+  var VAR_MAP = {
+    bgColor: "--sc-bg", textColor: "--sc-text", text: "--sc-text",
+    accentColor: "--sc-accent", accentTextColor: "--sc-accent-text",
+    barColor: "--sc-accent", buttonBgColor: "--sc-accent", buttonColor: "--sc-accent-text",
+    titleColor: "--sc-title", titleSize: "--sc-title-size",
+    imageSize: "--sc-img", verticalSpacing: "--sc-gap",
+    fontSize: "--sc-font-size", textSize: "--sc-font-size",
+    borderRadius: "--sc-radius", radius: "--sc-radius", borderColor: "--sc-border",
+    originalColor: "--sc-original", discountedColor: "--sc-discounted",
+    discountBadgeTextColor: "--sc-badge-text", discountBadgeBgColor: "--sc-badge-bg",
+    discountLabelColor: "--sc-badge-text", discountBgColor: "--sc-badge-bg",
+    crossIconColor: "--sc-badge-text",
+  };
+
+  function styleVars(style) {
+    if (!style) return "";
+    return Object.keys(style)
+      .filter(function (styleKey) { return VAR_MAP[styleKey]; })
+      .map(function (styleKey) {
+        var styleValue = style[styleKey];
+        return VAR_MAP[styleKey] + ":" + esc(typeof styleValue === "number" ? styleValue + "px" : styleValue);
+      })
+      .join(";");
+  }
+
+  function applyTokens() {
+    root.style.cssText = styleVars(spec.general || {});
+  }
+
+  function wrap(type, block, inner) {
+    if (!inner) return "";
+    var vars = styleVars(block.style);
+    return '<div class="sc-block sc-blk-' + esc(type) + '"' +
+      (vars ? ' style="' + vars + '"' : "") + ">" + inner + "</div>";
+  }
+
+  function safe(fn, block) {
+    try { return fn(block) || ""; } catch (e) { return ""; } // broken block never breaks the cart
+  }
+
+  var registry = {
+    TOP_BAR: TOP_BAR,
+    SUBTOTAL: SUBTOTAL,
+    CHECKOUT_BUTTON: CHECKOUT_BUTTON,
+  };
+
+  function TOP_BAR(block) {
+    var blockProps = block.props || {};
+    var count = blockProps.showItemCount && cart
+      ? ' <span class="sc-count">• ' + cart.item_count + "</span>" : "";
+    return '<div class="sc-topbar"><span class="sc-title">' + esc(blockProps.title) + count +
+      '</span><button class="sc-close" data-action="close" aria-label="Close">✕</button></div>';
+  }
+
+  function SUBTOTAL(block) {
+    var blockProps = block.props || {};
+    if (!cart) return "";
+    var original = blockProps.showOriginalPrice && cart.original_total_price > cart.total_price
+      ? '<s class="sc-original">' + money(cart.original_total_price) + "</s>" : "";
+    return '<div class="sc-subtotal"><span>' + esc(blockProps.title) + "</span><span>" + original +
+      '<span class="sc-discounted">' + money(cart.total_price) + "</span></span></div>";
+  }
+
+  function CHECKOUT_BUTTON(block) {
+    return '<button class="sc-checkout" data-action="checkout">' +
+      fill((block.props || {}).title, tvars()) + "</button>";
+  }
+
+  function render() {
+    snapshotInputs();
+    applyTokens();
+    ["header", "body", "footer"].forEach(function (region) {
+      var host = $("sc-" + region);
+      var blocks = spec[region] || {};
+      if (blocks.style) host.style.cssText = styleVars(blocks.style);
+      host.innerHTML = Object.keys(blocks)
+        .filter(function (blockKey) { return blockKey !== "style" && blocks[blockKey] && blocks[blockKey].enabled && registry[blockKey]; })
+        .map(function (blockKey) { return wrap(blockKey, blocks[blockKey], safe(registry[blockKey], blocks[blockKey])); })
+        .join("");
+    });
+    restoreInputs();
+    syncCartCount(cart ? cart.item_count : 0);
+  }
+
+  function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+  function getCart(attempt) {
+    attempt = attempt || 0;
+    return _fetch(ctx.root + "cart.js", {
+      headers: { "X-Side-Cart": "1", "Cache-Control": "no-cache" },
+    }).then(function (res) {
+      if (res.status === 204) {
+        return _fetch(ctx.root + "cart/update.js", {
+          method: "POST",
+          headers: { "X-Side-Cart": "1", "Content-Type": "application/json" },
+          body: "{}",
+        }).then(function (r2) { return r2.json(); });
+      }
+      if (!res.ok && res.status >= 500 && attempt < 3) {
+        return wait(200 * (attempt + 1)).then(function () { return getCart(attempt + 1); });
+      }
+      return res.json();
+    }).catch(function () {
+      if (attempt < 3) return wait(200 * (attempt + 1)).then(function () { return getCart(attempt + 1); });
+      return null; // keep last good cart
+    });
+  }
+
+  function setCart(next) {
+    if (!next) return;                 // fetch failed → keep last good cart
+    cart = next;
+    window.__sideCartLast = next;      // the add-diff (Task 4) depends on this
+    checkFreeGift();
+    render();
+    document.dispatchEvent(new CustomEvent("side-cart:updated", { detail: { cart: cart } }));
+  }
+
+  function refreshCart() {
+    return getCart().then(setCart);
+  }
+
+  refreshCart(); // boot: first paint
+
   /* §3 products + writes */
   /* §4 detect */
   /* §5 count-sync */
@@ -58,8 +222,9 @@
   function route(action, t, e) {
     switch (action) {
       case "close": closeDrawer(); break;
+      case "checkout": location.href = ctx.checkoutUrl || "/checkout"; break;
     }
   }
 
-  window.SideCart = { open: openDrawer, close: closeDrawer, refresh: function () {} };
+  window.SideCart = { open: openDrawer, close: closeDrawer, refresh: refreshCart };
 })();
