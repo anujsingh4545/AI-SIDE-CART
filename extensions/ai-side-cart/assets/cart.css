@@ -141,7 +141,9 @@ a.sc-line-title:hover { text-decoration: underline; }
 /* CHECKOUT_BUTTON */
 .sc-checkout { display: block; width: 100%; padding: 16px; border: 0; cursor: pointer; border-radius: 12px; background: var(--sc-accent); color: var(--sc-accent-text); font-size: 16px; font-weight: 700; letter-spacing: .01em; transition: opacity .15s; }
 .sc-checkout:hover { filter: brightness(1.06); }
-.sc-continue { display: block; width: 100%; margin-top: 12px; background: none; border: 0; cursor: pointer; color: var(--sc-text); font-weight: 600; font-size: 14px; text-align: center; }
+/* own dark color: the CHECKOUT_BUTTON wrapper sets --sc-text to the button's text
+   color (white), which would otherwise make this link invisible on the footer */
+.sc-continue { display: block; width: 100%; margin-top: 10px; background: none; border: 0; cursor: pointer; color: #1a1a1a; font-weight: 600; font-size: 14px; text-align: center; }
 .sc-continue:hover { text-decoration: underline; }
 
 /* TRUST_BADGES / PAYMENT_METHODS */
