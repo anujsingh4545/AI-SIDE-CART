@@ -170,15 +170,39 @@
       '</span><button class="sc-close" data-action="close" aria-label="Close">✕</button></div>';
   }
 
+  // aggregate every discount the cart carries — cart-level (order discounts) AND line-level
+  // (product/collection discounts, which our footer previously missed), grouped by title.
+  // Gift lines are skipped (their price-zeroing discount is represented by the FREE badge).
+  function collectDiscounts() {
+    const byTitle = {};
+    const order = [];
+    function add(title, amount) {
+      const key = title || "Discount";
+      if (!(key in byTitle)) { byTitle[key] = 0; order.push(key); }
+      byTitle[key] += amount || 0;
+    }
+    ((cart && cart.cart_level_discount_applications) || []).forEach(function (application) {
+      add(application.title || application.code, application.total_allocated_amount);
+    });
+    ((cart && cart.items) || []).forEach(function (item) {
+      if (item.properties && item.properties._sc_gift) return;
+      (item.line_level_discount_allocations || []).forEach(function (alloc) {
+        add(alloc.discount_application && alloc.discount_application.title, alloc.amount);
+      });
+    });
+    return order.filter(function (title) { return byTitle[title] > 0; })
+      .map(function (title) { return { title: title, amount: byTitle[title] }; });
+  }
+
   function SUBTOTAL(block) {
     const blockProps = block.props || {};
     if (!cart) return "";
-    // cart-level discounts (e.g. "big savings −Rs. X") shown as their own rows above the total
-    const discountRows = ((cart.cart_level_discount_applications) || [])
-      .map(function (application) {
+    // every applied discount (cart-level AND line-level, automatic or code) shown as a row
+    const discountRows = collectDiscounts()
+      .map(function (discount) {
         return '<div class="sc-disc-line"><span class="sc-disc-label">Discounts</span>' +
-          '<span class="sc-disc-chip">' + TAG_ICON + " " + esc(application.title) + "</span>" +
-          '<span class="sc-disc-amt">-' + money(application.total_allocated_amount) + "</span></div>";
+          '<span class="sc-disc-chip">' + TAG_ICON + " " + esc(discount.title) + "</span>" +
+          '<span class="sc-disc-amt">-' + money(discount.amount) + "</span></div>";
       }).join("");
     const original = blockProps.showOriginalPrice && cart.original_total_price > cart.total_price
       ? '<s class="sc-original">' + money(cart.original_total_price) + "</s>" : "";
@@ -993,14 +1017,17 @@
   }
 
   function variantHtml(item, blockProps) {
-    if (!blockProps.showVariantSelector || !item.variant_title) return "";
+    if (!blockProps.showVariantSelector) return "";
+    // single-variant products (Shopify's default "Default Title" variant) have no real
+    // options — show neither a label nor a picker
+    if (item.product_has_only_default_variant || !item.variant_title) return "";
     const isGiftLine = item.properties && item.properties._sc_gift;
     const staticLabel = '<span class="sc-variant">' + esc(item.variant_title) + "</span>";
     if (isGiftLine) return staticLabel;
     const cached = productCache.get(item.handle);
     if (!cached) { ensureProductLoaded(item.handle); return staticLabel; }
     if (cached.status !== "ok" || !Array.isArray(cached.data.variants) ||
-        cached.data.variants.length < 2) return staticLabel;
+        cached.data.variants.length < 2) return "";   // only one real variant → no picker
     const options = cached.data.variants.map(function (variant) {
       return '<option value="' + variant.id + '"' +
         (variant.id === item.variant_id ? " selected" : "") +
