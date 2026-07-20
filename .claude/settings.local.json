@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-ChildItem -Path \"d:\\\\skailama\\\\ai-side-cart\\\\app\" -Recurse -Force | Select-Object FullName, PSIsContainer | Sort-Object FullName | ForEach-Object { $_.FullName })"
+      "PowerShell(Get-ChildItem -Path \"d:\\\\skailama\\\\ai-side-cart\\\\app\" -Recurse -Force | Select-Object FullName, PSIsContainer | Sort-Object FullName | ForEach-Object { $_.FullName })",
+      "Bash(npm uninstall *)",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(mkdir -p prisma/migrations/0_init)",
+      "Bash(set PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes)",
+      "PowerShell(cd \"d:\\\\skailama\\\\ai-side-cart\"; $env:PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION = \"yes\"; npx prisma db push --force-reset 2>&1)",
+      "Bash(rm -rf prisma/migrations/0_init)"
     ]
   }
 }
