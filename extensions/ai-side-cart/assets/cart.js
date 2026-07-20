@@ -982,8 +982,17 @@
 
   function route(action, actionTarget) {
     switch (action) {
-      case "qty": changeQty(actionTarget.dataset.line, Number(actionTarget.dataset.qty)); break;
-      case "remove": changeQty(actionTarget.dataset.line, 0); break;
+      case "qty": {
+        const stepper = actionTarget.closest(".sc-qty");
+        if (stepper) stepper.classList.add("sc-loading");   // spinner until the re-render replaces it
+        changeQty(actionTarget.dataset.line, Number(actionTarget.dataset.qty));
+        break;
+      }
+      case "remove": {
+        actionTarget.classList.add("sc-loading");           // spinner in the trash button
+        changeQty(actionTarget.dataset.line, 0);
+        break;
+      }
       case "apply-discount": {
         const discountInput = $("sc-disc-input");
         const discountCode = discountInput && discountInput.value.trim();

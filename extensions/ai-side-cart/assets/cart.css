@@ -77,14 +77,31 @@ a.sc-line-title:hover { text-decoration: underline; }
 .sc-qty button { border: 0; background: none; padding: 0 12px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--sc-text); }
 .sc-qty button:hover { color: var(--sc-accent); }
 .sc-qty .sc-qty-val { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; font-weight: 600; font-size: 14px; border-left: 1px solid var(--sc-border); border-right: 1px solid var(--sc-border); }
+/* qty update: keep the −/+ visible but disabled, spinner in place of the number (Kaching) */
+.sc-qty.sc-loading button { pointer-events: none; opacity: .35; }
+.sc-qty.sc-loading .sc-qty-val { color: transparent; position: relative; }
+.sc-qty.sc-loading .sc-qty-val::after {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 13px; height: 13px;
+  border: 2px solid rgba(0,0,0,.18); border-top-color: var(--sc-text); border-radius: 50%;
+  animation: sc-spin .7s linear infinite;
+}
+@keyframes sc-spin { to { transform: rotate(360deg); } }
 .sc-line-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; text-align: right; }
 .sc-price { font-weight: 700; font-size: 15px; white-space: nowrap; }
 .sc-price-was { color: var(--sc-original); font-weight: 400; font-size: 13px; text-decoration: line-through; white-space: nowrap; }
 .sc-save { display: inline-flex; align-items: center; gap: 4px; color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
 .sc-save svg { width: 11px; height: 11px; flex: none; }
-.sc-remove { background: none; border: 0; padding: 4px; cursor: pointer; color: #3f4b5b; border-radius: 6px; line-height: 0; }
+.sc-remove { background: none; border: 0; padding: 4px; cursor: pointer; color: #3f4b5b; border-radius: 6px; line-height: 0; position: relative; }
 .sc-remove:hover { color: #d32f2f; }
 .sc-remove svg { width: 16px; height: 16px; display: block; }
+/* remove: spinner in place of the trash icon while the line is being removed (Kaching) */
+.sc-remove.sc-loading { pointer-events: none; }
+.sc-remove.sc-loading svg { visibility: hidden; }
+.sc-remove.sc-loading::after {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px;
+  border: 2px solid rgba(0,0,0,.18); border-top-color: var(--sc-text); border-radius: 50%;
+  animation: sc-spin .7s linear infinite;
+}
 .sc-badge { color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; }
 .sc-empty { text-align: center; color: var(--sc-muted); padding: 48px 0; font-size: 15px; }
 
