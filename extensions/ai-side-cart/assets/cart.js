@@ -30,7 +30,23 @@
   let pausedWriteDepth = 0;   // >0 while any of OUR cart writes is in flight
   function interceptorIsPaused() { return pausedWriteDepth > 0; }
 
+  // Critical CSS injected SYNCHRONOUSLY (inline <style>, applies on first paint) so the
+  // drawer starts off-screen with NO transition. The external cart.css loads async via
+  // <link>; without this the drawer would paint unstyled (in flow), then the late CSS
+  // would apply translateX(100%) WITH the transition and visibly slide off to the right
+  // on every load. Same transform value + no transition here = zero animation on load;
+  // open/close still animate because the full sheet adds the transition afterward.
+  const CRITICAL_CSS =
+    ":host{display:block!important}" +
+    "*{box-sizing:border-box}" +
+    "#sc-overlay{position:fixed;inset:0;background:rgba(17,17,17,.45);opacity:0;pointer-events:none;z-index:2147483646}" +
+    "#side-cart{position:fixed;top:0;right:0;height:100%;width:min(100vw,525px);background:#fff;" +
+    "transform:translateX(100%);z-index:2147483647;display:flex;flex-direction:column}" +
+    ":host(.sc-open) #side-cart{transform:none}" +
+    ":host(.sc-open) #sc-overlay{opacity:1;pointer-events:auto}";
+
   shadow.innerHTML =
+    "<style>" + CRITICAL_CSS + "</style>" +
     (ctx.cssUrl ? '<link rel="stylesheet" href="' + esc(ctx.cssUrl) + '">' : "") +
     '<div id="sc-overlay" data-action="close"></div>' +
     '<aside id="side-cart" role="dialog" aria-modal="true" aria-label="Cart">' +
