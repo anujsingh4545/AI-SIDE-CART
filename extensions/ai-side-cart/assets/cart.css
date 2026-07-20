@@ -49,7 +49,7 @@
 /* track holds the animated fill + ring markers sitting ON the bar at each threshold */
 .sc-track { position: relative; height: 6px; border-radius: 25px; background: #e6e6ea; }
 .sc-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 25px; background: var(--sc-accent); transition: width .45s cubic-bezier(.4,0,.2,1); }
-.sc-milestone { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #cfcfd6; box-shadow: 0 0 0 3px #fff; z-index: 1; }
+.sc-milestone { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #cfcfd6; z-index: 1; }
 .sc-milestone.sc-done { border-color: var(--sc-accent); background: var(--sc-accent); }
 /* labels are absolutely positioned under their markers */
 .sc-ms-labels { position: relative; height: 13px; margin-top: 12px; }
@@ -66,14 +66,14 @@
 a.sc-line-title:hover { text-decoration: underline; }
 .sc-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sc-variant { color: var(--sc-muted); font-size: 13px; }
-.sc-variant-select { height: 36px; border: 1px solid var(--sc-border); border-radius: 8px; background-color: #fff;
+.sc-variant-select { height: 30px; border: 1px solid var(--sc-border); border-radius: 8px; background-color: #fff;
   font-size: 13px; color: var(--sc-text); padding: 0 28px 0 12px; max-width: 150px;
   appearance: none; -webkit-appearance: none; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 10px center;
 }
 /* segmented qty stepper — −, editable number input, + */
-.sc-qty { position: relative; display: inline-flex; align-items: stretch; height: 36px; border: 1px solid var(--sc-border); border-radius: 8px; overflow: hidden; }
+.sc-qty { position: relative; display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--sc-border); border-radius: 8px; overflow: hidden; }
 .sc-qty button { border: 0; background: none; padding: 0 12px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--sc-text); }
 .sc-qty button:hover { color: var(--sc-accent); }
 .sc-qty .sc-qty-val {
@@ -110,9 +110,13 @@ a.sc-line-title:hover { text-decoration: underline; }
   animation: sc-spin .7s linear infinite;
 }
 .sc-badge { color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; }
-.sc-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 55vh; text-align: center; color: var(--sc-muted); font-size: 15px; }
+.sc-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; color: var(--sc-muted); font-size: 15px; }
 .sc-empty svg { width: 40px; height: 40px; color: #b8b8be; }
-/* empty cart: no functional blocks render, so drop the footer's divider line */
+/* empty cart: stretch body → product block → empty state so it centers vertically in the
+   space left below the header (no functional blocks render); also drop the footer divider */
+:host(.sc-empty-cart) #sc-body { display: flex; flex-direction: column; }
+:host(.sc-empty-cart) #sc-body > .sc-block { flex: 1 1 auto; display: flex; flex-direction: column; }
+:host(.sc-empty-cart) .sc-empty { flex: 1 1 auto; }
 :host(.sc-empty-cart) #sc-footer { box-shadow: none; }
 
 /* DISCOUNT_CODE */
