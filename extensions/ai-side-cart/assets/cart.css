@@ -27,23 +27,25 @@
 }
 :host(.sc-open) #side-cart { transform: none; }
 :host(.sc-open) #sc-overlay { opacity: 1; pointer-events: auto; }
-#sc-header { flex: none; }
-#sc-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }
-#sc-footer { flex: none; background: var(--sc-bg); box-shadow: 0 -1px 0 var(--sc-line); }
-.sc-block { padding: 12px 12px; }
+/* Layout: blocks carry NO padding of their own. Each region is a grid container that
+   owns the padding, and the gap provides consistent spacing between blocks. */
+#sc-header { flex: none; display: grid; gap: 12px; padding: 16px 14px 6px; }
+#sc-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; display: grid; gap: 12px; align-content: start; padding: 6px 14px; }
+#sc-footer { flex: none; background: var(--sc-bg); box-shadow: 0 -1px 0 var(--sc-line); display: grid; gap: 12px; padding: 14px; }
+.sc-block { padding: 0; min-width: 0; }
 
 /* TOP_BAR — centered title, close pinned right */
 .sc-topbar { position: relative; display: flex; align-items: center; justify-content: center; }
 .sc-topbar .sc-title { font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
 .sc-topbar .sc-count { font-weight: 700; }
-.sc-close { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--sc-text); padding: 4px; border-radius: 8px; }
+.sc-close { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--sc-text); padding: 4px; border-radius: 8px; }
 
-/* TIMER — full-width tinted band */
-.sc-blk-TIMER { padding: 0; }
+/* TIMER — full-width tinted band: break out of the header's horizontal padding */
+.sc-blk-TIMER { margin: 0 -14px; }
 .sc-blk-TIMER .sc-timer { background: var(--sc-bg); color: var(--sc-text); text-align: center; font-weight: 600; padding: 12px 20px; font-size: 14px; }
 
 /* PROGRESS_BAR */
-.sc-progress { padding: 4px 6px 2px; }
+.sc-progress { padding: 0 4px; }
 .sc-progress-text { margin: 0 0 16px; text-align: center; font-size: 14px; font-weight: 500; }
 .sc-progress-text b { font-weight: 700; }
 /* track holds the animated fill + ring markers sitting ON the bar at each threshold */
