@@ -48,9 +48,16 @@
     });
   }
 
+  function groupThousands(numberString) {
+    var parts = String(numberString).split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");   // 1259.90 → 1,259.90
+    return parts.join(".");
+  }
+
   function money(cents) {
-    var amount = (Number(cents || 0) / 100).toFixed(2);
-    var whole = String(Math.round(Number(cents || 0) / 100));
+    var value = Number(cents || 0) / 100;
+    var amount = groupThousands(value.toFixed(2));
+    var whole = groupThousands(String(Math.round(value)));
     var out = String(ctx.moneyFormat || "{{amount}}");
     out = out.replace(/\{\{\s*amount_no_decimals[^}]*\}\}/g, whole)
              .replace(/\{\{\s*amount[^}]*\}\}/g, amount);
@@ -137,17 +144,26 @@
   }
 
   function SUBTOTAL(block) {
-    var blockProps = block.props || {};
+    const blockProps = block.props || {};
     if (!cart) return "";
-    var original = blockProps.showOriginalPrice && cart.original_total_price > cart.total_price
+    // cart-level discounts (e.g. "big savings −Rs. X") shown as their own rows above the total
+    const discountRows = ((cart.cart_level_discount_applications) || [])
+      .map(function (application) {
+        return '<div class="sc-disc-line"><span class="sc-disc-label">Discounts</span>' +
+          '<span class="sc-disc-chip">' + TAG_ICON + " " + esc(application.title) + "</span>" +
+          '<span class="sc-disc-amt">-' + money(application.total_allocated_amount) + "</span></div>";
+      }).join("");
+    const original = blockProps.showOriginalPrice && cart.original_total_price > cart.total_price
       ? '<s class="sc-original">' + money(cart.original_total_price) + "</s>" : "";
-    return '<div class="sc-subtotal"><span>' + esc(blockProps.title) + "</span><span>" + original +
-      '<span class="sc-discounted">' + money(cart.total_price) + "</span></span></div>";
+    return '<div class="sc-summary">' + discountRows +
+      '<div class="sc-subtotal"><span>' + esc(blockProps.title) + "</span><span>" + original +
+      '<span class="sc-discounted">' + money(cart.total_price) + "</span></span></div></div>";
   }
 
   function CHECKOUT_BUTTON(block) {
     return '<button class="sc-checkout" data-action="checkout">' +
-      fill((block.props || {}).title, tvars()) + "</button>";
+      fill((block.props || {}).title, tvars()) + "</button>" +
+      '<button class="sc-continue" data-action="close">continue shopping</button>';
   }
 
   function render() {
@@ -227,27 +243,53 @@
       .then(function (next) { next ? setCart(next) : refreshCart(); });
   }
 
-  function lineHtml(item, line, p) {
-    var gift = item.properties && item.properties._sc_gift;
-    var img = item.image
+  var TRASH_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m-9 0v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6"/></svg>';
+  var TAG_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg>';
+
+  function lineHtml(item, line, blockProps) {
+    const gift = item.properties && item.properties._sc_gift;
+    const img = item.image
       ? '<img class="sc-img" src="' + esc(item.image) + '" alt="" loading="lazy">'
       : '<span class="sc-img"></span>';
-    var qty = !gift && p.showQuantitySelector
+
+    const qtyStepper = !gift && blockProps.showQuantitySelector
       ? '<span class="sc-qty">' +
         '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity - 1) + '" aria-label="Decrease">−</button>' +
-        "<span>" + item.quantity + "</span>" +
+        '<span class="sc-qty-val">' + item.quantity + "</span>" +
         '<button data-action="qty" data-line="' + line + '" data-qty="' + (item.quantity + 1) + '" aria-label="Increase">+</button>' +
         "</span>"
       : "";
-    var price = gift
-      ? '<span class="sc-badge">FREE</span>'
-      : '<span class="sc-price">' + money(p.showSingleItemPrice ? item.final_price : item.final_line_price) + "</span>";
-    var remove = gift ? ""
-      : '<button class="sc-remove" data-action="remove" data-line="' + line + '">Remove</button>';
+    const controls = gift ? "" : '<div class="sc-controls">' + variantHtml(item, blockProps) + qtyStepper + "</div>";
+
+    // line-level discount: struck-through original price + green "You save X%" pill
+    const lineDiscounted = !gift && item.original_line_price > item.final_line_price;
+    const savedPercent = lineDiscounted
+      ? Math.round(((item.original_line_price - item.final_line_price) / item.original_line_price) * 100)
+      : 0;
+    const savePill = savedPercent > 0
+      ? '<span class="sc-save">' + TAG_ICON + " You save " + savedPercent + "%</span>"
+      : "";
+
+    let price;
+    if (gift) {
+      price = '<span class="sc-badge">FREE</span>';
+    } else {
+      const shownPrice = blockProps.showSingleItemPrice ? item.final_price : item.final_line_price;
+      const wasPrice = blockProps.showSingleItemPrice ? item.original_price : item.original_line_price;
+      price = (lineDiscounted ? '<s class="sc-price-was">' + money(wasPrice) + "</s>" : "") +
+        '<span class="sc-price">' + money(shownPrice) + "</span>";
+    }
+    const remove = gift ? ""
+      : '<button class="sc-remove" data-action="remove" data-line="' + line + '" aria-label="Remove">' + TRASH_ICON + "</button>";
+
     return '<li class="sc-line">' + img +
       '<div class="sc-line-main"><span class="sc-line-title">' + esc(item.product_title) + "</span>" +
-      variantHtml(item, p) + qty + "</div>" +
-      '<div class="sc-line-side">' + price + remove + "</div></li>";
+      controls + "</div>" +
+      '<div class="sc-line-side">' + price + savePill + remove + "</div></li>";
   }
 
   function PRODUCTS_IN_CART(block) {
@@ -578,6 +620,9 @@
   /* §6 progress bar + free-gift engine */
   var justUnlockedFlash = null;   // { label, expiresAt } — brief unlockedText flash
   var previousProgressTotal = 0;
+  // milestone icon per reward type; falls back to a tag for unknown types
+  var PROGRESS_ICONS = { DISCOUNT: "🏷️", FREE_GIFT: "🎁", FREE_SHIPPING: "🚚" };
+  function progressIcon(type) { return PROGRESS_ICONS[type] || "🏷️"; }
 
   function progressBlock() {
     var block = spec.header && spec.header.PROGRESS_BAR;
@@ -640,15 +685,15 @@
     if (!nextRule) messageTemplate = blockProps.allUnlockedText;
     else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
     else messageTemplate = blockProps.defaultText;
-    var milestones = rules.map(function (rule) {
-      var leftPercent = Math.min(100, (rule.unlockAt / maxUnlockAt) * 100);
-      var reached = total >= rule.unlockAt;
-      return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
-        '" style="left:' + leftPercent + '%" title="' + esc(rule.label) + '"></span>';
+    const milestones = rules.map(function (rule) {
+      const reached = total >= rule.unlockAt;
+      return '<span class="sc-milestone' + (reached ? " sc-done" : "") + '">' +
+        '<span class="sc-ms-icon">' + progressIcon(rule.type) + "</span>" +
+        "<span>" + esc(rule.label) + "</span></span>";
     }).join("");
     return '<div class="sc-progress"><p class="sc-progress-text">' + fill(messageTemplate, tvars()) +
-      '</p><div class="sc-track"><div class="sc-fill" style="width:' + fillPercent + '%"></div>' +
-      milestones + "</div></div>";
+      '</p><div class="sc-track"><div class="sc-fill" style="width:' + fillPercent + '%"></div></div>' +
+      '<div class="sc-milestones">' + milestones + "</div></div>";
   }
 
   /* Free-gift engine. JS adds/removes the gift LINE; a Shopify automatic discount

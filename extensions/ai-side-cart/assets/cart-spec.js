@@ -14,7 +14,7 @@ window.__SC_SPEC__ = {
       enabled: true,
       props: {
         timeLimit: 45,
-        title: "Cart expires in {{timer}} ⏰",
+        title: "Your cart will expire in {{timer}} ⏰",
         resetTimerProductAddedToCart: true,
         removeCartItemsTimerEnds: false,
       },
