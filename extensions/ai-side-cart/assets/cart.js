@@ -207,6 +207,11 @@
 
   refreshCart(); // boot: first paint
 
+  installFetchInterceptor();
+  installXhrInterceptor();
+  installCartIconClickDetector();
+  disableNativeCart();
+
   /* §3 products + writes */
   function pausedWrite(path, body) {
     pausedWriteDepth += 1;
@@ -266,7 +271,260 @@
     }).join("") + "</ul>";
   }
 
-  /* §4 detect */
+  /* §4 detect — network interception. THE CONTRACT: the real request ALWAYS runs
+     untouched; only our reaction is conditional; any error degrades to passthrough. */
+
+  var ENDPOINT_MATCHERS = {                 // add endpoints here, never edit evaluate()
+    add:    /\/cart\/add(\.js)?(\?|$)/,
+    change: /\/cart\/change(\.js)?(\?|$)/,
+    update: /\/cart\/update(\.js)?(\?|$)/,
+    clear:  /\/cart\/clear(\.js)?(\?|$)/,
+  };
+
+  var NON_CART_BODY_KEYS = ["note", "sections", "attributes", "discount", "currency"];
+
+  function classifyEndpoint(url) {
+    for (var endpointName in ENDPOINT_MATCHERS) {
+      if (ENDPOINT_MATCHERS[endpointName].test(url)) return endpointName;
+    }
+    return null;
+  }
+
+  function parseRequestBody(rawBody, headers) {
+    try {
+      if (!rawBody) return Promise.resolve({});
+      if (typeof rawBody === "string") {
+        var trimmed = rawBody.trim();
+        if (trimmed[0] === "{" || trimmed[0] === "[") return Promise.resolve(JSON.parse(trimmed));
+        return Promise.resolve(paramsToObject(new URLSearchParams(rawBody)));
+      }
+      if (rawBody instanceof URLSearchParams) return Promise.resolve(paramsToObject(rawBody));
+      if (typeof FormData !== "undefined" && rawBody instanceof FormData) {
+        return Promise.resolve(paramsToObject(rawBody));
+      }
+      // Request.clone().body, Blob, ArrayBuffer → read as text and re-parse
+      return new Response(rawBody).text().then(function (text) {
+        return parseRequestBody(text, headers);
+      });
+    } catch (parseError) { return Promise.resolve({}); }
+  }
+
+  function paramsToObject(iterable) {
+    var out = {};
+    iterable.forEach(function (value, key) { out[key] = value; });
+    return out;
+  }
+
+  function hasOnlyNonCartKeys(bodyData) {
+    var keys = Object.keys(bodyData);
+    return keys.length > 0 && keys.every(function (key) {
+      return NON_CART_BODY_KEYS.indexOf(key.split("[")[0]) !== -1;
+    });
+  }
+
+  var ENDPOINT_PREDICATES = {               // "is this a REAL cart change?"
+    add: function (bodyData) {
+      if (Array.isArray(bodyData.items)) return bodyData.items.length > 0;
+      if (bodyData.id != null) return true;
+      return Object.keys(bodyData).some(function (key) {
+        return key === "id" || key.indexOf("items[") === 0;
+      });
+    },
+    update: function (bodyData) {
+      if (hasOnlyNonCartKeys(bodyData)) return false;
+      var hasUpdatesObject = bodyData.updates != null;
+      var hasUpdatesParams = Object.keys(bodyData).some(function (key) {
+        return key.indexOf("updates[") === 0 || key === "updates";
+      });
+      if (!hasUpdatesObject && !hasUpdatesParams) return false;
+      if (hasUpdatesObject && typeof bodyData.updates === "object" &&
+          Object.keys(bodyData.updates).length === 0) return false;
+      return true;
+    },
+    change: function (bodyData) { return !hasOnlyNonCartKeys(bodyData); },
+    clear: function () { return true; },
+  };
+
+  function requestHasOurHeader(headers) {
+    if (!headers) return false;
+    if (typeof Headers !== "undefined" && headers instanceof Headers) return headers.has("X-Side-Cart");
+    return Object.keys(headers).some(function (key) { return key.toLowerCase() === "x-side-cart"; });
+  }
+
+  // Every guard is load-bearing (spec §4.1). A guard returning true VETOES the
+  // reaction. Extend by adding entries — evaluate() never changes.
+  var INTERCEPT_GUARDS = [
+    { name: "own-request",       vetoes: function (requestInfo) { return requestHasOurHeader(requestInfo.headers); } },
+    { name: "interceptor-paused", vetoes: function () { return interceptorIsPaused(); } },
+    { name: "explicit-ignore",   vetoes: function (requestInfo) { return /[?&]side_cart_ignore=true/.test(requestInfo.url); } },
+    { name: "other-app-ocu",     vetoes: function (requestInfo) { return /[?&]ocu=/.test(requestInfo.url); } },
+  ];
+
+  function urlNeverOpensDrawer(url) { return /[?&]opens_cart=never/.test(url); }
+
+  // → null (ignore) or { endpoint, neverOpen }
+  function evaluateRequest(requestInfo) {
+    if (String(requestInfo.method || "GET").toUpperCase() !== "POST") return Promise.resolve(null);
+    var endpoint = classifyEndpoint(requestInfo.url);
+    if (!endpoint) return Promise.resolve(null);
+    var vetoed = INTERCEPT_GUARDS.some(function (guard) {
+      try { return guard.vetoes(requestInfo); } catch (guardError) { return false; }
+    });
+    if (vetoed) return Promise.resolve(null);
+    return parseRequestBody(requestInfo.body, requestInfo.headers).then(function (bodyData) {
+      if (!ENDPOINT_PREDICATES[endpoint](bodyData)) return null;
+      return { endpoint: endpoint, neverOpen: urlNeverOpensDrawer(requestInfo.url) };
+    });
+  }
+
+  function handleCartMutationResponse(response, verdict) {
+    try {
+      if (!response.ok) return Promise.resolve();
+      var onCartPage = /\/cart\/?$/.test(location.pathname);
+      if (!verdict.neverOpen && !onCartPage) openDrawer();
+      var diffDone = Promise.resolve();
+      if (verdict.endpoint === "add") {
+        diffDone = response.json().then(function (addResponseData) {
+          var addedItems = Array.isArray(addResponseData) ? addResponseData
+            : Array.isArray(addResponseData.items) ? addResponseData.items
+            : [addResponseData];
+          var previousCart = window.__sideCartLast;
+          addedItems.forEach(function (addedItem) {
+            if (!addedItem || addedItem.variant_id == null) return;
+            var previousLine = previousCart && previousCart.items && previousCart.items.find(
+              function (line) { return line.variant_id === addedItem.variant_id; });
+            var quantityAdded = addedItem.quantity - (previousLine ? previousLine.quantity : 0);
+            if (quantityAdded > 0) {
+              document.dispatchEvent(new CustomEvent("side-cart:item-added", {
+                detail: { item: addedItem, quantityAdded: quantityAdded },
+              }));
+            }
+          });
+        }).catch(function () {});
+      }
+      return diffDone.then(refreshCart);      // stashes __sideCartLast for the NEXT diff
+    } catch (reactionError) { return Promise.resolve(); } // never throw into theme code
+  }
+
+  function reactToResponse(requestInfo, response) {
+    evaluateRequest(requestInfo).then(function (verdict) {
+      if (verdict) return handleCartMutationResponse(response.clone(), verdict);
+    }).catch(function () {});
+  }
+
+  function installFetchInterceptor() {
+    window.fetch = function (input, init) {
+      var realRequest = _fetch(input, init);            // ALWAYS runs, untouched
+      try {
+        var requestInfo = {
+          url: typeof input === "string" ? input : (input && input.url) || "",
+          method: (init && init.method) || (input && input.method) || "GET",
+          headers: (init && init.headers) || (input && input.headers) || null,
+          body: (init && init.body) ||
+            (typeof Request !== "undefined" && input instanceof Request ? input.clone().body : null),
+        };
+        realRequest.then(function (response) { reactToResponse(requestInfo, response); })
+                   .catch(function () {});
+      } catch (interceptError) { /* degrade to passthrough */ }
+      return realRequest;
+    };
+  }
+
+  function installXhrInterceptor() {
+    var xhrProto = window.XMLHttpRequest.prototype;
+    var originalOpen = xhrProto.open, originalSend = xhrProto.send,
+        originalSetHeader = xhrProto.setRequestHeader;
+    xhrProto.open = function (method, url) {
+      try { this._sideCart = { method: method, url: String(url), headers: {} }; } catch (e) {}
+      return originalOpen.apply(this, arguments);
+    };
+    xhrProto.setRequestHeader = function (name, value) {
+      try { if (this._sideCart) this._sideCart.headers[name] = value; } catch (e) {}
+      return originalSetHeader.apply(this, arguments);
+    };
+    xhrProto.send = function (body) {
+      try {
+        if (this._sideCart) {
+          this._sideCart.body = body;
+          var xhr = this;
+          xhr.addEventListener("load", function () {
+            var responseLike = {
+              ok: xhr.status >= 200 && xhr.status < 300,
+              json: function () {
+                return Promise.resolve().then(function () { return JSON.parse(xhr.responseText); });
+              },
+              clone: function () { return responseLike; },
+            };
+            reactToResponse(xhr._sideCart, responseLike);
+          });
+        }
+      } catch (interceptError) { /* degrade to passthrough */ }
+      return originalSend.apply(this, arguments);
+    };
+  }
+
+  /* Click detector — the theme's cart icon opens OUR drawer. Extend the list per theme. */
+  var CART_LINK_SELECTORS =
+    'a[href$="/cart"], a[href*="/cart?"], a[href*="/cart#"], #cart-icon-bubble, ' +
+    '.header__icon--cart, [data-cart-icon], [data-drawer-toggle="cart"]';
+
+  function installCartIconClickDetector() {
+    document.addEventListener("click", function (event) {
+      if (event.target.closest("#sc-root")) return;      // never hijack clicks in OUR drawer
+      var cartLink = event.target.closest(CART_LINK_SELECTORS);
+      if (cartLink) { event.preventDefault(); event.stopPropagation(); openDrawer(); }
+    }, true);
+  }
+
+  /* Native drawer suppression — three layers (hide / close / keep-shut). All lists
+     are extension points; the logic below never changes for a new theme. */
+  var NATIVE_CART_SELECTORS = [
+    "cart-drawer", "cart-notification", "#CartDrawer", "#CartDrawer-Overlay",
+    ".mini-cart", "#slidecart", ".cart-popup",
+  ];
+  var NATIVE_CLOSE_BUTTON_SELECTORS =
+    ".drawer__close, [data-close], .cart-drawer__close, .cart-notification__close";
+  var SCROLL_LOCK_CLASSES = [
+    "overflow-hidden", "js-drawer-open", "t4s-lock-scroll", "cart-drawer-open",
+  ];
+
+  function closeNativeCartElements() {
+    NATIVE_CART_SELECTORS.forEach(function (selector) {
+      document.querySelectorAll(selector).forEach(function (nativeEl) {
+        try {
+          if (typeof nativeEl.close === "function") nativeEl.close();
+          nativeEl.removeAttribute("open");
+          ["active", "is-open", "animate", "open"].forEach(function (cls) {
+            nativeEl.classList.remove(cls);
+          });
+        } catch (closeError) { /* one drawer failing must not stop the rest */ }
+      });
+    });
+    SCROLL_LOCK_CLASSES.forEach(function (lockClass) {
+      document.body.classList.remove(lockClass);
+      document.documentElement.classList.remove(lockClass);
+    });
+  }
+
+  function disableNativeCart() {
+    // Layer 1 — hide: one stylesheet, every selector guarded so we never match ourselves
+    var hideStyle = document.createElement("style");
+    hideStyle.textContent = NATIVE_CART_SELECTORS.map(function (selector) {
+      return selector + ":not(#side-cart){display:none!important;visibility:hidden!important}";
+    }).join("");
+    document.head.appendChild(hideStyle);
+    // Layer 2 — close now
+    closeNativeCartElements();
+    // Layer 3 — keep shut: re-close anything that re-opens itself
+    var keepShutObserver = new MutationObserver(closeNativeCartElements);
+    NATIVE_CART_SELECTORS.forEach(function (selector) {
+      document.querySelectorAll(selector).forEach(function (nativeEl) {
+        keepShutObserver.observe(nativeEl, {
+          attributes: true, attributeFilter: ["open", "aria-hidden", "class"],
+        });
+      });
+    });
+  }
   /* §5 count-sync */
   /* §6 progress + free gift */
   /* §7 timer */
