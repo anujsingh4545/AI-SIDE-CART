@@ -216,6 +216,19 @@
     });
     restoreInputs();
     syncCartCount(cart ? cart.item_count : 0);
+    animateProgressFill();
+  }
+
+  // the progress fill is rendered at its PREVIOUS width; bump it to the target in a rAF
+  // so the CSS width-transition animates smoothly instead of snapping to the new value
+  function animateProgressFill() {
+    const fillEl = shadow.querySelector(".sc-fill[data-pct]");
+    if (!fillEl) return;
+    const target = parseFloat(fillEl.dataset.pct) || 0;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { fillEl.style.width = target + "%"; });
+    });
+    lastFillPercent = target;
   }
 
   function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
@@ -680,9 +693,7 @@
   /* §6 progress bar + free-gift engine */
   let justUnlockedFlash = null;   // { label, expiresAt } — brief unlockedText flash
   let previousProgressTotal = 0;
-  // milestone icon per reward type; falls back to a tag for unknown types
-  const PROGRESS_ICONS = { DISCOUNT: "🏷️", FREE_GIFT: "🎁", FREE_SHIPPING: "🚚" };
-  function progressIcon(type) { return PROGRESS_ICONS[type] || "🏷️"; }
+  let lastFillPercent = 0;        // last rendered fill %, so the bar animates from it, not 0
 
   function progressBlock() {
     const block = spec.header && spec.header.PROGRESS_BAR;
@@ -745,15 +756,30 @@
     if (!nextRule) messageTemplate = blockProps.allUnlockedText;
     else if (justUnlockedFlash && Date.now() < justUnlockedFlash.expiresAt) messageTemplate = blockProps.unlockedText;
     else messageTemplate = blockProps.defaultText;
-    const milestones = rules.map(function (rule) {
+    // Kaching-style: ring markers sit ON the track at each threshold, plain labels below.
+    // Edge markers/labels shift so the first/last stay inside the track bounds.
+    function edgeShift(pct, forLabel) {
+      if (pct >= 100) return forLabel ? "-100%" : "-50%";
+      if (pct <= 0) return forLabel ? "0" : "-50%";
+      return forLabel ? "-50%" : "-50%";
+    }
+    const markers = rules.map(function (rule) {
+      const pct = Math.min(100, (rule.unlockAt / maxUnlockAt) * 100);
       const reached = total >= rule.unlockAt;
-      return '<span class="sc-milestone' + (reached ? " sc-done" : "") + '">' +
-        '<span class="sc-ms-icon">' + progressIcon(rule.type) + "</span>" +
-        "<span>" + esc(rule.label) + "</span></span>";
+      return '<span class="sc-milestone' + (reached ? " sc-done" : "") +
+        '" style="left:' + pct + "%;transform:translate(" + edgeShift(pct, false) + ',-50%)"></span>';
     }).join("");
+    const labels = rules.map(function (rule) {
+      const pct = Math.min(100, (rule.unlockAt / maxUnlockAt) * 100);
+      const reached = total >= rule.unlockAt;
+      return '<span class="sc-ms-label' + (reached ? " sc-done" : "") +
+        '" style="left:' + pct + "%;transform:translateX(" + edgeShift(pct, true) + ')">' + esc(rule.label) + "</span>";
+    }).join("");
+    // fill starts at the PREVIOUS width; render() bumps it to data-pct in a rAF so the
+    // CSS width-transition actually animates (the element is recreated on every render)
     return '<div class="sc-progress"><p class="sc-progress-text">' + fill(messageTemplate, tvars()) +
-      '</p><div class="sc-track"><div class="sc-fill" style="width:' + fillPercent + '%"></div></div>' +
-      '<div class="sc-milestones">' + milestones + "</div></div>";
+      '</p><div class="sc-track"><div class="sc-fill" data-pct="' + fillPercent + '" style="width:' + lastFillPercent + '%"></div>' +
+      markers + '</div><div class="sc-ms-labels">' + labels + "</div></div>";
   }
 
   /* Free-gift engine. JS adds/removes the gift LINE; a Shopify automatic discount
