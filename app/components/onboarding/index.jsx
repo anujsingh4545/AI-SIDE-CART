@@ -29,7 +29,7 @@ export default function Onboarding({ scanData, themeData, aiSummary, onboardingC
           />
         );
       case 2:
-        return <BuildStep spec={generatedSpec} />;
+        return <BuildStep spec={generatedSpec} aiSummary={aiSummary} />;
       default:
         return null;
     }

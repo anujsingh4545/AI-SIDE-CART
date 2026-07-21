@@ -9,7 +9,7 @@ import styles from "./BuildStep.module.css";
 
 const SAVE_BAR_ID = "cart-builder-save-bar";
 
-export default function BuildStep({ spec }) {
+export default function BuildStep({ spec, aiSummary }) {
   const [cartSpec, setCartSpec] = useState(spec ?? defaultCartSpec);
   const [initialState, setInitialState] = useState(spec ?? defaultCartSpec);
   const [selectedProducts, setSelectedProducts] = useState([
@@ -106,7 +106,14 @@ export default function BuildStep({ spec }) {
       </SaveBar>
 
       <div className={styles.columns}>
-        <ChatSection spec={cartSpec} onSpecChange={handleFullSpecChange} />
+        <ChatSection
+          spec={cartSpec}
+          onSpecChange={handleFullSpecChange}
+          initialSummary={aiSummary}
+          onSave={handleSave}
+          onDiscard={handleDiscard}
+          isSaving={loadingSave}
+        />
         <PreviewSection spec={cartSpec} products={selectedProducts} onProductsChange={setSelectedProducts} />
         <ManualSettingsSection
           spec={cartSpec}
