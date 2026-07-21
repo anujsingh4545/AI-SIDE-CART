@@ -1,8 +1,8 @@
-.wrap { padding: 0 16px 12px; }
+.wrap { padding: 0 16px; }
 .btn {
   display: block;
   width: 100%;
-  height: 52px;
+  padding: 10px;
   border: none;
   font-weight: 700;
   cursor: default;

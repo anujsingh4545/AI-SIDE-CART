@@ -9,7 +9,7 @@ export default function SubtotalPreview({ data, subtotal }) {
     <div className={styles.wrap}>
       <span style={{ color: titleColor }}>{title}</span>
       <span style={{ color: amountColor }} className={styles.amount}>
-        Rs. {((subtotal ?? 0) / 100).toFixed(2)}
+        ${((subtotal ?? 0) / 100).toFixed(2)}
       </span>
     </div>
   );

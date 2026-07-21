@@ -19,6 +19,7 @@
   background: #fff;
   display: flex;
   flex-direction: column;
+  padding-bottom: 10px;
 }
 
 .cart {
@@ -47,4 +48,6 @@
 .cartFooter {
   flex-shrink: 0;
   border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
 }

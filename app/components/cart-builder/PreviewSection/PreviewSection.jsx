@@ -89,7 +89,13 @@ export default function PreviewSection({ spec, products = [], onProductsChange }
             },
           })}
         </div>
-        <div className={styles.cartFooter} style={{ background: spec.footer?.style?.bgColor ?? "#fff" }}>
+        <div
+          className={styles.cartFooter}
+          style={{
+            background: spec.footer?.style?.bgColor ?? "#fff",
+            gap: `${spec.footer?.style?.verticalSpacing ?? 0}px`,
+          }}
+        >
           {renderBlocks(FOOTER_MAP, spec.footer, footerOrder)}
         </div>
       </div>

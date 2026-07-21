@@ -1,4 +1,6 @@
-.wrap { padding: 0 16px; border-top: 1px solid #e5e7eb; }
+.wrap {
+  padding: 0 16px;
+}
 .header {
   display: flex;
   justify-content: space-between;
@@ -6,18 +8,12 @@
   width: 100%;
   background: none;
   border: none;
-  padding: 12px 0;
+  padding: 0;
   cursor: default;
   font-weight: 600;
+  padding-bottom: 12px;
 }
-.chevron { color: #9ca3af; font-size: 12px; }
-.textarea {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
+.chevron {
   color: #9ca3af;
-  min-height: 64px;
-  margin-bottom: 12px;
-  background: #fafafa;
+  font-size: 12px;
 }

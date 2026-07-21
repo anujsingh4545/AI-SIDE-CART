@@ -152,10 +152,10 @@ const cartSpec = {
         title: "Checkout • {{cart_total}}",
       },
       style: {
-        fontSize: 16,
+        fontSize: 13,
         bgColor: "#6D28D9",
         textColor: "#FFFFFF",
-        borderRadius: 10,
+        borderRadius: 8,
       },
     },
 
