@@ -1,0 +1,182 @@
+/* Side Cart — stylesheet injected INTO the widget's shadow root. Scoped to the shadow;
+   :host is the light-DOM #sc-root element. No merchant colors here; everything reads --sc-* */
+:host {
+  /* the host has no light-DOM children (all content is in the shadow), so themes that
+     ship `div:empty{display:none}` (e.g. Dawn's base.css) would hide the whole widget */
+  display: block !important;
+  --sc-bg: #fff; --sc-text: #111; --sc-accent: #6d28d9; --sc-accent-text: #fff;
+  --sc-radius: 12px; --sc-img: 14px; --sc-gap: 12px; --sc-border: #e6e6e6;
+  --sc-line: #eee; --sc-muted: #8a8a8a;
+  --sc-title: #111; --sc-title-size: 14px; --sc-font-size: 14px;
+  --sc-original: #999; --sc-discounted: #111;
+  --sc-badge-text: #079455; --sc-badge-bg: #dcfae6;
+  color: var(--sc-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; }
+#sc-overlay {
+  position: fixed; inset: 0; background: rgba(17,17,17,.45);
+  opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 2147483646;
+}
+#side-cart {
+  position: fixed; top: 0; right: 0; height: 100%;
+  width: min(100vw, 480px); background: var(--sc-bg); color: var(--sc-text);
+  transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+  z-index: 2147483647; display: flex; flex-direction: column;
+  box-shadow: -10px 0 40px rgba(0,0,0,.18); font-size: var(--sc-font-size); line-height: 1.4;
+}
+:host(.sc-open) #side-cart { transform: none; }
+/* AI chat open (desktop): the chat dock takes the right edge (380px), pushing the open
+   cart left by exactly that width. Mobile keeps the full-cover chat — no shift. */
+@media (min-width: 900px) {
+  :host(.sc-open.sc-chat-shifted) #side-cart { transform: translateX(-380px); }
+}
+:host(.sc-open) #sc-overlay { opacity: 1; pointer-events: auto; }
+/* Layout: blocks carry NO padding of their own. Each region is a grid container that
+   owns the padding, and the gap provides consistent spacing between blocks. */
+#sc-header { flex: none; display: grid; gap: 12px; padding: 16px 14px 6px; }
+#sc-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; display: grid; gap: 12px; align-content: start; padding: 6px 14px; }
+#sc-footer { flex: none; background: var(--sc-bg); box-shadow: 0 -1px 0 var(--sc-line); display: grid; gap: 12px; padding: 14px; }
+.sc-block { padding: 0; min-width: 0; }
+
+/* TOP_BAR — centered title, close pinned right */
+.sc-topbar { position: relative; display: flex; align-items: center; justify-content: center; }
+.sc-topbar .sc-title { font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
+.sc-topbar .sc-count { font-weight: 700; }
+.sc-close { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--sc-text); padding: 4px; border-radius: 8px; }
+
+/* TIMER — full-width tinted band: break out of the header's horizontal padding */
+.sc-blk-TIMER { margin: 0 -14px; }
+.sc-blk-TIMER .sc-timer { background: var(--sc-bg); color: var(--sc-text); text-align: center; font-weight: 600; padding: 12px 20px; font-size: 14px; }
+
+/* PROGRESS_BAR */
+.sc-progress { padding: 0 4px; }
+.sc-progress-text { margin: 0 0 16px; text-align: center; font-size: 14px; font-weight: 500; }
+.sc-progress-text b { font-weight: 700; }
+/* track holds the animated fill + ring markers sitting ON the bar at each threshold */
+.sc-track { position: relative; height: 6px; border-radius: 25px; background: #e6e6ea; }
+.sc-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 25px; background: var(--sc-accent); transition: width .45s cubic-bezier(.4,0,.2,1); }
+.sc-milestone { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #cfcfd6; z-index: 1; }
+.sc-milestone.sc-done { border-color: var(--sc-accent); background: var(--sc-accent); }
+/* labels are absolutely positioned under their markers */
+.sc-ms-labels { position: relative; height: 13px; margin-top: 12px; }
+.sc-ms-label { position: absolute; top: 0; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--sc-muted); white-space: nowrap; }
+.sc-ms-label.sc-done { color: var(--sc-accent); }
+
+/* PRODUCTS_IN_CART */
+.sc-lines { list-style: none; margin: 0; padding: 0; }
+.sc-line { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--sc-line); }
+.sc-line:last-child { border-bottom: 0; }
+.sc-img { width: var(--sc-img); height: var(--sc-img); object-fit: cover; border-radius: var(--sc-radius); background: #f3f3f3; border: 1px solid var(--sc-line); flex: none; }
+.sc-line-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sc-line-title { color: var(--sc-title); font-weight: 700; font-size: 14px; line-height: 1.2; text-decoration: none; }
+a.sc-line-title:hover { text-decoration: underline; }
+.sc-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sc-variant { color: var(--sc-muted); font-size: 13px; }
+.sc-variant-select { height: 30px; border: 1px solid var(--sc-border); border-radius: 8px; background-color: #fff;
+  font-size: 13px; color: var(--sc-text); padding: 0 28px 0 12px; max-width: 150px;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+/* segmented qty stepper — −, editable number input, + */
+.sc-qty { position: relative; display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--sc-border); border-radius: 8px; overflow: hidden; }
+.sc-qty button { border: 0; background: none; padding: 0 12px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--sc-text); }
+.sc-qty button:hover { color: var(--sc-accent); }
+.sc-qty .sc-qty-val {
+  width: 40px; text-align: center; font-weight: 600; font-size: 14px; color: inherit;
+  border: 0; border-left: 1px solid var(--sc-border); border-right: 1px solid var(--sc-border);
+  background: transparent; padding: 0; -moz-appearance: textfield; appearance: textfield;
+}
+.sc-qty .sc-qty-val:focus { outline: none; }
+.sc-qty .sc-qty-val::-webkit-outer-spin-button,
+.sc-qty .sc-qty-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* qty update: keep the −/+ visible but disabled, spinner centered over the control (Kaching) */
+.sc-qty.sc-loading button { pointer-events: none; opacity: .35; }
+.sc-qty.sc-loading .sc-qty-val { color: transparent; }
+.sc-qty.sc-loading::after {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 13px; height: 13px;
+  border: 2px solid rgba(0,0,0,.18); border-top-color: var(--sc-text); border-radius: 50%;
+  animation: sc-spin .7s linear infinite;
+}
+@keyframes sc-spin { to { transform: rotate(360deg); } }
+.sc-line-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; text-align: right; }
+/* was-price + price grouped tightly; the group is one flex child of .sc-line-side */
+.sc-prices { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.sc-price { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.sc-price-was { color: var(--sc-original); font-weight: 400; font-size: 13px; text-decoration: line-through; white-space: nowrap; }
+.sc-save { display: inline-flex; align-items: center; gap: 4px; color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+.sc-save svg { width: 11px; height: 11px; flex: none; }
+.sc-remove { background: none; border: 0; padding: 4px; cursor: pointer; color: #3f4b5b; border-radius: 6px; line-height: 0; position: relative; }
+.sc-remove:hover { color: #d32f2f; }
+.sc-remove svg { width: 16px; height: 16px; display: block; }
+/* remove: spinner in place of the trash icon while the line is being removed (Kaching) */
+.sc-remove.sc-loading { pointer-events: none; }
+.sc-remove.sc-loading svg { visibility: hidden; }
+.sc-remove.sc-loading::after {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px;
+  border: 2px solid rgba(0,0,0,.18); border-top-color: var(--sc-text); border-radius: 50%;
+  animation: sc-spin .7s linear infinite;
+}
+.sc-badge { color: var(--sc-badge-text); background: var(--sc-badge-bg); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; }
+.sc-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; color: var(--sc-muted); font-size: 15px; }
+.sc-empty svg { width: 40px; height: 40px; color: #b8b8be; }
+/* empty cart: stretch body → product block → empty state so it centers vertically in the
+   space left below the header (no functional blocks render); also drop the footer divider */
+:host(.sc-empty-cart) #sc-body { display: flex; flex-direction: column; }
+:host(.sc-empty-cart) #sc-body > .sc-block { flex: 1 1 auto; display: flex; flex-direction: column; }
+:host(.sc-empty-cart) .sc-empty { flex: 1 1 auto; }
+:host(.sc-empty-cart) #sc-footer { box-shadow: none; }
+
+/* DISCOUNT_CODE */
+.sc-disc-row { display: flex; gap: 10px; }
+.sc-disc-row input { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--sc-border); border-radius: 10px; font-size: 14px; color: var(--sc-text); }
+.sc-disc-row input:focus { outline: none; border-color: var(--sc-accent); }
+.sc-apply { height: 44px; padding: 0 22px; border: 0; border-radius: 10px; background: var(--sc-accent); color: var(--sc-accent-text); cursor: pointer; font-weight: 600; font-size: 14px; transition: opacity .15s; }
+.sc-apply:hover { filter: brightness(1.05); }
+
+/* while a cart write is in flight, dim + disable the primary actions (Kaching-style) */
+#side-cart.sc-busy .sc-checkout,
+#side-cart.sc-busy .sc-apply { opacity: .5; pointer-events: none; cursor: default; }
+.sc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.sc-chip { display: inline-flex; align-items: center; gap: 6px; color: var(--sc-badge-text); background: var(--sc-badge-bg); padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.sc-chip button { border: 0; background: none; cursor: pointer; color: var(--sc-badge-text); font-size: 12px; line-height: 1; }
+
+/* ORDER_NOTES */
+.sc-notes-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; cursor: pointer; color: var(--sc-title); font-size: var(--sc-title-size); font-weight: 600; padding: 4px 0; }
+.sc-notes textarea { width: 100%; min-height: 64px; margin-top: 8px; border: 1px solid var(--sc-border); border-radius: 10px; padding: 10px; font-size: 14px; font-family: inherit; resize: vertical; }
+.sc-notes textarea:focus { outline: none; border-color: var(--sc-accent); }
+
+/* SUBTOTAL + cart-level discounts summary */
+.sc-summary { display: flex; flex-direction: column; gap: 10px; }
+.sc-disc-line { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.sc-disc-label { color: var(--sc-text); }
+.sc-disc-chip { display: inline-flex; align-items: center; gap: 5px; color: var(--sc-muted); background: #f1f1f3; padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+.sc-disc-chip svg { width: 13px; height: 13px; }
+.sc-disc-amt { margin-left: auto; color: var(--sc-text); font-size: 14px; white-space: nowrap; }
+.sc-subtotal { display: flex; align-items: baseline; justify-content: space-between; font-weight: 700; font-size: 16px; color: var(--sc-title); }
+.sc-original { color: var(--sc-original); font-weight: 400; margin-right: 8px; text-decoration: line-through; }
+.sc-discounted { color: var(--sc-discounted); }
+
+/* CHECKOUT_BUTTON */
+.sc-checkout { display: block; width: 100%; padding: 16px; border: 0; cursor: pointer; border-radius: 12px; background: var(--sc-accent); color: var(--sc-accent-text); font-size: 16px; font-weight: 700; letter-spacing: .01em; transition: opacity .15s; }
+.sc-checkout:hover { filter: brightness(1.06); }
+/* own dark color: the CHECKOUT_BUTTON wrapper sets --sc-text to the button's text
+   color (white), which would otherwise make this link invisible on the footer */
+.sc-continue { display: block; width: 100%; margin-top: 10px; background: none; border: 0; cursor: pointer; color: #1a1a1a; font-weight: 600; font-size: 14px; text-align: center; }
+.sc-continue:hover { text-decoration: underline; }
+
+/* TRUST_BADGES / PAYMENT_METHODS */
+.sc-trust { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; color: var(--sc-muted); font-size: 12px; }
+.sc-pay { display: flex; justify-content: center; gap: 6px; }
+
+/* CHAT_LAUNCHER — black pill opening the AI chat dock; colors come from the block's
+   style (bgColor/textColor/borderRadius) via the standard --sc-* wrapper vars */
+.sc-chat-launcher { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; cursor: pointer; border-radius: var(--sc-radius); background: var(--sc-bg); color: var(--sc-text); text-align: left; font-family: inherit; }
+.sc-chat-launcher:hover { filter: brightness(1.12); }
+.sc-chat-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--sc-accent); color: var(--sc-accent-text); display: flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
+.sc-chat-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.sc-chat-title { font-weight: 700; font-size: 14px; }
+.sc-chat-subtitle { font-size: 12px; opacity: .75; }
+.sc-chat-chevron { opacity: .7; font-size: 16px; flex: none; }
+.sc-pay span { border: 1px solid var(--sc-border); border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 600; color: var(--sc-muted); background: var(--sc-bg); }
