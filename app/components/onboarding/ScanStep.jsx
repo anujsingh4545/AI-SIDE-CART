@@ -60,7 +60,7 @@ function buildItems(d) {
     },
     {
       id: "orders",
-      label: "Analyzing 90 days of orders",
+      label: "Analyzing 30 days of orders",
       result: d ? `${fmt(d.orderCount)} orders` : "—",
       iconBg: "#1a1a1a",
       iconColor: "#fff",

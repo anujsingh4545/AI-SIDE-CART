@@ -85,7 +85,10 @@ Rules:
 - Sentence 2: which specific feature(s) you turned on and why, tied to their data
 - Tone: direct, confident, like a smart analyst — no filler, no fluff
 - Do NOT start with "Based on", "I see", "It looks like"
-- Do NOT mention all features — only the 1–2 most relevant to this store's numbers`;
+- Do NOT mention all features — only the 1–2 most relevant to this store's numbers
+- PROGRESS_BAR rules: always keep all 3 rules (DISCOUNT, FREE_SHIPPING, FREE_GIFT) — you may adjust unlockAt thresholds and labels to fit the store's AOV, but never remove a rule
+- PROGRESS_BAR currency: all monetary values are in USD ($). When unlockedBy is "CART_TOTAL", unlockAt is in cents (e.g. 5000 = $50.00). When unlockedBy is "QUANTITY", unlockAt is a raw item count
+- Do NOT use ₹ or any currency other than $ when referencing cart values`;
 }
 
 // ── Main export ────────────────────────────────────────────────
@@ -104,7 +107,7 @@ export async function generateScanSummary(scanData) {
 
   const storeContext = [
     `Products in catalog: ${productCount}`,
-    `Orders (last 90 days): ${orderCount}`,
+    `Orders (last 30 days): ${orderCount}`,
     `Average order value: ${currencySymbol}${aov?.toLocaleString() ?? "unknown"}`,
     `Cart abandonment rate: ${abandonmentRate != null ? `${abandonmentRate}%` : "unknown"}`,
     `Active discounts: ${discountCount}`,

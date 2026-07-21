@@ -30,34 +30,50 @@ async function getProductCount(admin) {
 
 // Returns order count, order amounts (for AOV), currency, and sold product IDs (for slow-moving)
 async function getOrderStats(admin, since) {
-  const res = await admin.graphql(
-    `#graphql
-    query GetOrderStats($query: String!) {
-      ordersCount(query: $query) { count }
-      orders(first: 250, query: $query, sortKey: CREATED_AT, reverse: true) {
-        nodes {
-          totalPriceSet { shopMoney { amount currencyCode } }
-          lineItems(first: 50) {
-            nodes { product { id } }
+  const q = `created_at:>${since}`;
+  const allNodes = [];
+  let cursor = null;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const res = await admin.graphql(
+      `#graphql
+      query GetOrderStats($query: String!, $after: String) {
+        orders(first: 250, query: $query, sortKey: CREATED_AT, reverse: true, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            totalPriceSet { shopMoney { amount currencyCode } }
+            lineItems(first: 50) {
+              nodes { product { id } }
+            }
           }
         }
-      }
-    }`,
-    { variables: { query: `created_at:>${since}` } },
+      }`,
+      { variables: { query: q, after: cursor } },
+    );
+    const { data } = await res.json();
+    const page = data?.orders;
+    allNodes.push(...(page?.nodes ?? []));
+    hasNextPage = page?.pageInfo?.hasNextPage ?? false;
+    cursor = page?.pageInfo?.endCursor ?? null;
+  }
+
+  // ordersCount in a separate cheap query
+  const countRes = await admin.graphql(
+    `#graphql query C($q: String!) { ordersCount(query: $q) { count } }`,
+    { variables: { q } },
   );
+  const { data: cd } = await countRes.json();
+  const count = cd?.ordersCount?.count ?? allNodes.length;
 
-  const { data } = await res.json();
-  const count = data?.ordersCount?.count ?? 0;
-  const nodes = data?.orders?.nodes ?? [];
-
-  const amounts = nodes
+  const amounts = allNodes
     .map((o) => parseFloat(o.totalPriceSet?.shopMoney?.amount ?? 0))
     .filter((a) => a > 0);
 
-  const currencyCode = nodes[0]?.totalPriceSet?.shopMoney?.currencyCode ?? "INR";
+  const currencyCode = allNodes[0]?.totalPriceSet?.shopMoney?.currencyCode ?? "INR";
 
   const soldProductIds = new Set(
-    nodes
+    allNodes
       .flatMap((o) => o.lineItems.nodes)
       .map((li) => li.product?.id)
       .filter(Boolean),
@@ -114,7 +130,7 @@ async function getSlowMovingCount(admin, soldProductIds) {
 
 // ── Orchestrator ───────────────────────────────────────────────
 
-export async function fetchScanData(admin, days = 90) {
+export async function fetchScanData(admin, days = 30) {
   const since = nDaysAgoISO(days);
 
   // First batch — runs in parallel

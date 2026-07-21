@@ -19,7 +19,7 @@ function buildStats(d) {
     {
       label: "Average order value",
       value: d?.aov != null ? `${sym}${fmt(d.aov)}` : "—",
-      sub: "Across your last 90 days of orders",
+      sub: "Across your last 30 days of orders",
     },
     {
       label: "Cart abandonment",

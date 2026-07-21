@@ -74,8 +74,8 @@ export default function ProductsInCartPreview({ data, cartItems = [], onCartItem
             <div className={styles.right}>
               <span className={styles.price}>
                 {showSingleItemPrice
-                  ? `$ ${(parseFloat(total) / item.qty).toFixed(2)}`
-                  : `$ ${total}`}
+                  ? `$${(parseFloat(total) / item.qty).toFixed(2)}`
+                  : `$${total}`}
               </span>
               <button className={styles.trash} onClick={() => removeItem(item.productId)} aria-label="Remove">
                 <Icon source={DeleteIcon} tone="subdued" />
