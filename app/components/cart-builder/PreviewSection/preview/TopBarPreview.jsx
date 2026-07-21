@@ -1,3 +1,5 @@
+import { Icon } from "@shopify/polaris";
+import { XIcon } from "@shopify/polaris-icons";
 import styles from "./TopBarPreview.module.css";
 
 export default function TopBarPreview({ data, general, itemCount }) {
@@ -8,6 +10,9 @@ export default function TopBarPreview({ data, general, itemCount }) {
   return (
     <div className={styles.wrap}>
       <span className={styles.title} style={{ color: textColor }}>{label}</span>
+      <button className={styles.close} style={{ color: textColor }} aria-label="Close">
+        <Icon source={XIcon} />
+      </button>
     </div>
   );
 }

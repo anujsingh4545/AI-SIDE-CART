@@ -33,20 +33,13 @@
   flex-shrink: 0;
 }
 
-.cartBodyFixed {
-  flex-shrink: 0;
-}
-
 .cartBody {
   flex: 1 1 0;
   min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0,0,0,0.15) transparent;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-
-.cartBody::-webkit-scrollbar { width: 4px; }
-.cartBody::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
 
 .cartFooter {
   flex-shrink: 0;

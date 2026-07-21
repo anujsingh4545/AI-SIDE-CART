@@ -5,23 +5,21 @@ import cartSpec from "../constants/cart-spec.js";
 function buildFeaturesContext(spec) {
   const lines = [];
 
-  const { header, body, footer } = spec;
-
-  // Header
-  if (header.TIMER)
-    lines.push(
-      `TIMER (header) — urgency countdown, e.g. "Cart expires in ${header.TIMER.props.timeLimit} mins". ` +
-      `Can reset on product add. Currently ${header.TIMER.enabled ? "ON" : "OFF"}.`,
-    );
-
-  if (header.PROGRESS_BAR)
-    lines.push(
-      `PROGRESS_BAR (header) — spend-to-unlock bar. Unlocks at ` +
-      `${(header.PROGRESS_BAR.props.unlockAt / 100).toLocaleString()} in cart value. ` +
-      `Auto-adds a free gift. Currently ${header.PROGRESS_BAR.enabled ? "ON" : "OFF"}.`,
-    );
+  const { body, footer } = spec;
 
   // Body
+  if (body.TIMER)
+    lines.push(
+      `TIMER — urgency countdown, e.g. "Cart expires in ${body.TIMER.props.timeLimit} mins". ` +
+      `Can reset on product add. Currently ${body.TIMER.enabled ? "ON" : "OFF"}.`,
+    );
+
+  if (body.PROGRESS_BAR)
+    lines.push(
+      `PROGRESS_BAR — spend-to-unlock bar with 3 milestones (discount, free shipping, free gift). ` +
+      `Currently ${body.PROGRESS_BAR.enabled ? "ON" : "OFF"}.`,
+    );
+
   if (body.PRODUCTS_IN_CART)
     lines.push(
       `PRODUCTS_IN_CART (body) — cart line items with variant & quantity selectors, ` +
@@ -74,7 +72,9 @@ function buildSystemPrompt(spec) {
 
   return `You are a cart optimization AI for a Shopify slide-cart app.
 You have already drafted a cart for this store based on their data.
-Write a 2-sentence summary of what you found and what you've set up.
+Write a 2-sentence plain-text summary of what you found and what you set up.
+
+OUTPUT FORMAT: Plain text only — 2 sentences, no JSON, no code, no markdown, no bullet points, no structured data whatsoever.
 
 Available cart features (you chose which ones to highlight based on the store data):
 ${features}
@@ -86,6 +86,7 @@ Rules:
 - Tone: direct, confident, like a smart analyst — no filler, no fluff
 - Do NOT start with "Based on", "I see", "It looks like"
 - Do NOT mention all features — only the 1–2 most relevant to this store's numbers
+- Do NOT output JSON, objects, arrays, or any structured format — plain sentences only
 - PROGRESS_BAR rules: always keep all 3 rules (DISCOUNT, FREE_SHIPPING, FREE_GIFT) — you may adjust unlockAt thresholds and labels to fit the store's AOV, but never remove a rule
 - PROGRESS_BAR currency: all monetary values are in USD ($). When unlockedBy is "CART_TOTAL", unlockAt is in cents (e.g. 5000 = $50.00). When unlockedBy is "QUANTITY", unlockAt is a raw item count
 - Do NOT use ₹ or any currency other than $ when referencing cart values`;

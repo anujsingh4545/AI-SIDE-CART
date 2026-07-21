@@ -35,7 +35,12 @@ const BLOCK_MAP = {
   PAYMENT_METHODS: PaymentMethodsBlock,
 };
 
-const DEFAULT_ORDER = ["CHAT_LAUNCHER", "DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"];
+function blockOrder(section) {
+  return Object.entries(section)
+    .filter(([, v]) => v && typeof v === "object" && typeof v.order === "number")
+    .sort((a, b) => a[1].order - b[1].order)
+    .map(([k]) => k);
+}
 
 function SortableBlockWrapper({ id, children }) {
   const {
@@ -68,7 +73,7 @@ function SortableBlockWrapper({ id, children }) {
 export default function FooterSection({ footer, onChange }) {
   const [open, setOpen] = useState(true);
   const sensors = useSensors(useSensor(PointerSensor));
-  const order = footer.order ?? DEFAULT_ORDER;
+  const order = blockOrder(footer);
 
   function setStyle(key, val) {
     onChange({ ...footer, style: { ...footer.style, [key]: val } });
@@ -77,9 +82,10 @@ export default function FooterSection({ footer, onChange }) {
   function handleDragEnd(event) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = order.indexOf(active.id);
-    const newIndex = order.indexOf(over.id);
-    onChange({ ...footer, order: arrayMove(order, oldIndex, newIndex) });
+    const newOrder = arrayMove(order, order.indexOf(active.id), order.indexOf(over.id));
+    const updated = { ...footer };
+    newOrder.forEach((key, idx) => { if (updated[key]) updated[key] = { ...updated[key], order: idx }; });
+    onChange(updated);
   }
 
   return (

@@ -17,8 +17,10 @@ export default function ManualSettingsSection({ spec, onChange, products, onProd
         initialSelectionIds: products.map((p) => ({ id: p.productId })),
       });
       if (!selected) return;
-      onProductsChange(
-        selected.map((p) => {
+      const existingIds = new Set(products.map((p) => p.productId));
+      const newProducts = selected
+        .filter((p) => !existingIds.has(p.id))
+        .map((p) => {
           const variants = (p.variants ?? []).map((v) => ({ variantId: v.id, title: v.title, price: v.price }));
           return {
             productId: p.id,
@@ -28,8 +30,8 @@ export default function ManualSettingsSection({ spec, onChange, products, onProd
             selectedVariantId: variants[0]?.variantId ?? null,
             quantity: 1,
           };
-        })
-      );
+        });
+      onProductsChange([...products, ...newProducts]);
     } catch {
       // dismissed
     }

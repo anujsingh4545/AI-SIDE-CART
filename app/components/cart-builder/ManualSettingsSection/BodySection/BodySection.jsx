@@ -26,7 +26,12 @@ const BLOCK_MAP = {
   PRODUCTS_IN_CART: ProductsInCartBlock,
 };
 
-const DEFAULT_ORDER = ["TIMER", "PROGRESS_BAR", "PRODUCTS_IN_CART"];
+function blockOrder(section) {
+  return Object.entries(section)
+    .filter(([, v]) => v && typeof v === "object" && typeof v.order === "number")
+    .sort((a, b) => a[1].order - b[1].order)
+    .map(([k]) => k);
+}
 
 function SortableBlockWrapper({ id, children }) {
   const {
@@ -59,14 +64,15 @@ function SortableBlockWrapper({ id, children }) {
 export default function BodySection({ body, onChange }) {
   const [open, setOpen] = useState(true);
   const sensors = useSensors(useSensor(PointerSensor));
-  const order = body.order ?? DEFAULT_ORDER;
+  const order = blockOrder(body);
 
   function handleDragEnd(event) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = order.indexOf(active.id);
-    const newIndex = order.indexOf(over.id);
-    onChange({ ...body, order: arrayMove(order, oldIndex, newIndex) });
+    const newOrder = arrayMove(order, order.indexOf(active.id), order.indexOf(over.id));
+    const updated = { ...body };
+    newOrder.forEach((key, idx) => { if (updated[key]) updated[key] = { ...updated[key], order: idx }; });
+    onChange(updated);
   }
 
   return (

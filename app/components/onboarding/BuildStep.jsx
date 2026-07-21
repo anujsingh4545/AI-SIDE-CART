@@ -14,7 +14,7 @@ export default function BuildStep({ spec }) {
   const [initialState, setInitialState] = useState(spec ?? defaultCartSpec);
   const [selectedProducts, setSelectedProducts] = useState([
     {
-      productId: "gid://shopify/Product/8714715529467",
+      productId: "gid://shopify/Product/8714215429437",
       title: "14k Bloom Earrings",
       image: "https://cdn.shopify.com/s/files/1/0684/1735/6027/files/18k-rose-diamond-earrings_5e7739a0-261d-4788-96c9-ef77214aa70e.jpg?v=1719906852",
       variants: [
@@ -26,7 +26,7 @@ export default function BuildStep({ spec }) {
       quantity: 1,
     },
     {
-      productId: "gid://shopify/Product/8714715365627",
+      productId: "gid://shopify/Product/8714715566657",
       title: "14k Dangling Obsidian Earrings",
       image: "https://cdn.shopify.com/s/files/1/0684/1735/6027/files/18k-white-gold-limelight-sequin-motif-earrings_021987b9-2eaf-4a5d-9a23-d65ce13220d8.jpg?v=1719906849",
       variants: [
@@ -39,11 +39,13 @@ export default function BuildStep({ spec }) {
     },
   ]);
   const [detectChange, setDetectChange] = useState(false);
-  const [loadingSave, setLoadingSave] = useState(false);
   const fetcher = useFetcher();
   const savedSpecRef = useRef(null);
+  const savingRef = useRef(false);
 
-  console.log("dgbfrew", selectedProducts);
+  // Derive loading purely from fetcher state — avoids the race where
+  // loadingSave state goes true before fetcher has left "idle"
+  const loadingSave = fetcher.state !== "idle";
 
   useEffect(() => {
     // eslint-disable-next-line no-undef
@@ -53,13 +55,17 @@ export default function BuildStep({ spec }) {
   }, [detectChange]);
 
   useEffect(() => {
-    if (fetcher.state === "idle" && loadingSave) {
-      setLoadingSave(false);
+    // Guard with ref so this only fires after WE triggered a save,
+    // not on every idle→idle render cycle
+    if (!savingRef.current || fetcher.state !== "idle") return;
+    savingRef.current = false;
+    const result = fetcher.data;
+    if (result?.ok) {
       setInitialState(savedSpecRef.current ?? cartSpec);
-      savedSpecRef.current = null;
       setDetectChange(false);
     }
-  }, [fetcher.state, loadingSave]);
+    savedSpecRef.current = null;
+  }, [fetcher.state]);
 
   function handleSpecChange(section, value) {
     setCartSpec((prev) => ({ ...prev, [section]: value }));
@@ -77,7 +83,7 @@ export default function BuildStep({ spec }) {
   }
 
   function handleSave() {
-    setLoadingSave(true);
+    savingRef.current = true;
     savedSpecRef.current = cartSpec;
     fetcher.submit(cartSpec, {
       method: "POST",

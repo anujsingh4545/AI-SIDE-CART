@@ -2,11 +2,12 @@
  * cart-spec.js — default CartSpec shipped with the app.
  *
  * Envelope shape for every block:
- *   blockName: { enabled, props, style? }
+ *   blockName: { order, enabled, props, style? }
  *
  * · 3 regions: header / body / footer
- * · Render order is fixed in the storefront renderer
- * · Money in cents (250 = ₹2.50)
+ * · `order` on each block = 0-based priority index; section-level `order` array
+ *   is kept in sync and is the source of truth for render order
+ * · Money in cents (250 = $2.50)
  * · Template vars: {{cart_total}} {{count}} {{timer}} {{needed}}
  */
 
@@ -24,6 +25,7 @@ const cartSpec = {
   header: {
 
     TOP_BAR: {
+      order: 0,
       enabled: true,
       props: {
         title: "My cart",
@@ -35,9 +37,8 @@ const cartSpec = {
   /* ── BODY ────────────────────────────────────────────────── */
   body: {
 
-    order: ["TIMER", "PROGRESS_BAR", "PRODUCTS_IN_CART"],
-
     TIMER: {
+      order: 0,
       enabled: true,
       props: {
         timeLimit: 45,                            // mins
@@ -52,6 +53,7 @@ const cartSpec = {
     },
 
     PROGRESS_BAR: {
+      order: 1,
       enabled: true,
       props: {
         unlockedBy: "CART_TOTAL",                 // "CART_TOTAL" | "QUANTITY"
@@ -72,11 +74,12 @@ const cartSpec = {
       },
       style: {
         barColor: "#6D28D9",
-        bgColor: "#EDE4FA",
+        bgColor: "#ffffff",
       },
     },
 
     PRODUCTS_IN_CART: {
+      order: 2,
       enabled: true,
       props: {
         showVariantSelector: true,
@@ -97,14 +100,13 @@ const cartSpec = {
   /* ── FOOTER ──────────────────────────────────────────────── */
   footer: {
 
-    order: ["CHAT_LAUNCHER", "DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"],
-
     style: {
       bgColor: "#FFFFFF",
       verticalSpacing: 10,
     },
 
     CHAT_LAUNCHER: {
+      order: 0,
       enabled: true,
       props: {
         title: "Chat with our AI stylist",
@@ -115,6 +117,7 @@ const cartSpec = {
     },
 
     DISCOUNT_CODE: {
+      order: 1,
       enabled: true,
       props: {
         placeholderTitle: "Discount code",
@@ -130,6 +133,7 @@ const cartSpec = {
     },
 
     ORDER_NOTES: {
+      order: 2,
       enabled: false,
       props: {
         title: "Add special instructions",
@@ -142,6 +146,7 @@ const cartSpec = {
     },
 
     SUBTOTAL: {
+      order: 3,
       enabled: true,
       props: {
         title: "Subtotal",
@@ -155,6 +160,7 @@ const cartSpec = {
     },
 
     CHECKOUT_BUTTON: {
+      order: 4,
       enabled: true,
       props: {
         title: "Checkout • {{cart_total}}",
@@ -168,6 +174,7 @@ const cartSpec = {
     },
 
     TRUST_BADGES: {
+      order: 5,
       enabled: true,
       props: {
         badges: [
@@ -182,6 +189,7 @@ const cartSpec = {
     },
 
     PAYMENT_METHODS: {
+      order: 6,
       enabled: false,
       props: {
         icons: ["VISA", "MC", "UPI", "AMEX"],          // default selected

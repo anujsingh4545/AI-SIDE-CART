@@ -12,8 +12,7 @@ import TrustBadgesPreview from "./preview/TrustBadgesPreview.jsx";
 import PaymentMethodsPreview from "./preview/PaymentMethodsPreview.jsx";
 import ChatLauncherPreview from "./preview/ChatLauncherPreview.jsx";
 
-const BODY_MAP ={ TIMER: TimerPreview, PROGRESS_BAR: ProgressBarPreview, PRODUCTS_IN_CART: ProductsInCartPreview };
-const SCROLLABLE_BODY_KEYS = new Set(["PRODUCTS_IN_CART"]);
+const BODY_MAP = { TIMER: TimerPreview, PROGRESS_BAR: ProgressBarPreview, PRODUCTS_IN_CART: ProductsInCartPreview };
 const FOOTER_MAP = {
   DISCOUNT_CODE: DiscountCodePreview,
   ORDER_NOTES: OrderNotesPreview,
@@ -52,8 +51,15 @@ export default function PreviewSection({ spec, products = [], onProductsChange }
   const { cartTotal, cartQty } = computeCart(cartItems);
   const subtotalCents = Math.round(cartTotal * 100);
 
-  const bodyOrder = spec.body?.order ?? [];
-  const footerOrder = spec.footer?.order ?? [];
+  function deriveOrder(section) {
+    return Object.entries(section ?? {})
+      .filter(([, v]) => v && typeof v === "object" && typeof v.order === "number")
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([k]) => k);
+  }
+
+  const bodyOrder = deriveOrder(spec.body);
+  const footerOrder = deriveOrder(spec.footer);
 
   function renderBlocks(map, section, order, extraProps = {}) {
     return order.map(key => {
@@ -78,14 +84,10 @@ export default function PreviewSection({ spec, products = [], onProductsChange }
             <TopBarPreview data={spec.header.TOP_BAR} general={spec.general} itemCount={itemCount} />
           </div>
         )}
-        <div className={styles.cartBodyFixed} style={{ background: bgColor }}>
-          {renderBlocks(BODY_MAP, spec.body, bodyOrder.filter(k => !SCROLLABLE_BODY_KEYS.has(k)), {
+        <div className={styles.cartBody} style={{ background: bgColor }}>
+          {renderBlocks(BODY_MAP, spec.body, bodyOrder, {
             TIMER: { onClearProducts: () => onProductsChange?.([]) },
             PROGRESS_BAR: { cartTotal, cartQty },
-          })}
-        </div>
-        <div className={styles.cartBody} style={{ background: bgColor }}>
-          {renderBlocks(BODY_MAP, spec.body, bodyOrder.filter(k => SCROLLABLE_BODY_KEYS.has(k)), {
             PRODUCTS_IN_CART: {
               cartItems,
               onCartItemsChange: (newItems) => {
