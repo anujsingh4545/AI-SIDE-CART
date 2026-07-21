@@ -1,0 +1,13 @@
+.wrap {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 16px 12px;
+}
+.badge {
+  border: 1px solid;
+  padding: 3px 7px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}

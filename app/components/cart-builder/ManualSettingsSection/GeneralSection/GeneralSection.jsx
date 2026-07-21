@@ -7,8 +7,6 @@ import styles from "./GeneralSection.module.css";
 const COLOR_FIELDS = [
   { key: "bgColor",         label: "Background" },
   { key: "textColor",       label: "Text" },
-  { key: "accentColor",     label: "Accent" },
-  { key: "accentTextColor", label: "Accent text" },
 ];
 
 export default function GeneralSection({ general, onChange }) {

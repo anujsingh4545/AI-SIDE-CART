@@ -16,7 +16,9 @@
       "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\skailama\\\\ai-side-cart\\\\app\\\\components\\\\cart-builder\\\\shared\\\\ColorSwatch\")",
       "Bash(npm ls *)",
       "WebFetch(domain:ai-sdk.dev)",
-      "WebFetch(domain:www.assistant-ui.com)"
+      "WebFetch(domain:www.assistant-ui.com)",
+      "Bash(Remove-Item -Recurse -Force \"d:/skailama/ai-side-cart/node_modules/.vite\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"Cache cleared\")"
     ]
   }
 }

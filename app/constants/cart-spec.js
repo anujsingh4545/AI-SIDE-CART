@@ -17,8 +17,6 @@ const cartSpec = {
   general: {
     bgColor: "#FFFFFF",
     textColor: "#111111",
-    accentColor: "#6D28D9",
-    accentTextColor: "#FFFFFF",
     radius: 10,
   },
 
@@ -39,7 +37,7 @@ const cartSpec = {
       enabled: true,
       props: {
         timeLimit: 45,                            // mins
-        title: "Cart expires in {{timer}} ⏰",
+        title: "Your cart will expire in {{timer}} ⏰",
         resetTimerProductAddedToCart: true,
         removeCartItemsTimerEnds: false,
       },
@@ -54,18 +52,18 @@ const cartSpec = {
       props: {
         unlockedBy: "CART_TOTAL",                 // "CART_TOTAL" | "QUANTITY"
         unlockAt: 200000,                         // cents
-        defaultText: "Add {{needed}} to unlock your free gift!",
+        defaultText: "{{last_unlocked}} Add {{needed}} to unlock your {{next_unlocked}}!",
         unlockedText: "🎉 Free gift unlocked!",
         rules: [
-          { label: "10% off", type: "DISCOUNT", unlockAt: 10000 },
+          { label: "🏷️ 10% off", type: "DISCOUNT", unlockAt: 70000 },
+          { label: "🚚 Free shipping", type: "FREE_SHIPPING", unlockAt: 140000 },
           {
-            label: "Free gift", type: "FREE_GIFT", unlockAt: 20000,
-            product: {                                            // ← required for FREE_GIFT; added FREE when crossed
-              productId: "gid://shopify/Product/889900",
-              variantId: "gid://shopify/ProductVariant/345t43",   // the variant actually added via /cart/add.js
+            label: "🎁 Free gift", type: "FREE_GIFT", unlockAt: 280000,
+            product: {
+              productId: null,
+              variantId: null,
             }
           },
-          { label: "Free shipping", type: "FREE_SHIPPING", unlockAt: 30000 },
         ],
       },
       style: {

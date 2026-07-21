@@ -52,7 +52,11 @@ export default defineConfig({
   build: {
     assetsInlineLimit: 0,
   },
+  resolve: {
+    dedupe: ["react", "react-dom", "react-router"],
+  },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react"],
+    exclude: ["react-chatbot-kit"],
   },
 });

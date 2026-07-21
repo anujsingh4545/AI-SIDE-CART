@@ -11,6 +11,7 @@
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -42,6 +43,8 @@
 
 .hiddenInput {
   position: absolute;
+  bottom: 0;
+  left: 0;
   width: 0;
   height: 0;
   opacity: 0;

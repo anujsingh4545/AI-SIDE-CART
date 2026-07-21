@@ -1,16 +1,50 @@
 .wrap {
   flex: 1 1 0;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
-  flex-direction: column;
-  padding: 16px;
-  box-sizing: border-box;
+  align-items: stretch;
+  justify-content: end;
+  background: #f3f4f6;
+  overflow: hidden;
+  width: 100%;
+  padding: 0px 20px;
 }
 
-.label {
-  font-family: sans-serif;
-  color: #9ca3af;
-  font-size: 12px;
-  margin: 0;
+.phone {
+  width: 90%;
+  max-width: 100%;
+  border-radius: 0;
+  box-shadow: -6px 0 24px rgba(0,0,0,0.12);
+  overflow: hidden;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.cart {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cartHeader {
+  flex-shrink: 0;
+}
+
+.cartBody {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.15) transparent;
+}
+
+.cartBody::-webkit-scrollbar { width: 4px; }
+.cartBody::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+
+.cartFooter {
+  flex-shrink: 0;
+  border-top: 1px solid #e5e7eb;
 }

@@ -18,12 +18,17 @@ export default function ManualSettingsSection({ spec, onChange, products, onProd
       });
       if (!selected) return;
       onProductsChange(
-        selected.map((p) => ({
-          productId: p.id,
-          variantId: p.variants?.[0]?.id ?? "",
-          title: p.title,
-          image: p.images?.[0]?.originalSrc ?? p.images?.[0]?.src ?? "",
-        }))
+        selected.map((p) => {
+          const variants = (p.variants ?? []).map((v) => ({ variantId: v.id, title: v.title, price: v.price }));
+          return {
+            productId: p.id,
+            title: p.title,
+            image: p.images?.[0]?.originalSrc ?? p.images?.[0]?.src ?? "",
+            variants,
+            selectedVariantId: variants[0]?.variantId ?? null,
+            quantity: 1,
+          };
+        })
       );
     } catch {
       // dismissed

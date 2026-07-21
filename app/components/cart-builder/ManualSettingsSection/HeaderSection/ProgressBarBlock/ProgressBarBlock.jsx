@@ -181,7 +181,7 @@ export default function ProgressBarBlock({ data, onChange, dragHandleRef, dragHa
               value={data.props.defaultText}
               onChange={(val) => setProp("defaultText", val)}
               autoComplete="off"
-              helpText="Use {{needed}} for remaining amount"
+              helpText="Use {{needed}} for remaining amount, {{last_unlocked}} for last unlocked, {{next_unlocked}} for next unlocked"
             />
             <TextField
               label="Unlocked text"
