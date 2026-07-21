@@ -19,7 +19,6 @@
   background: #fff;
   display: flex;
   flex-direction: column;
-  padding-bottom: 10px;
 }
 
 .cart {
@@ -31,6 +30,10 @@
 }
 
 .cartHeader {
+  flex-shrink: 0;
+}
+
+.cartBodyFixed {
   flex-shrink: 0;
 }
 

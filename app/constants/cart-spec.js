@@ -12,7 +12,7 @@
 
 const cartSpec = {
 
-  status : "draft", // active | draft
+  status: "draft", // active | draft
 
   general: {
     bgColor: "#FFFFFF",
@@ -23,8 +23,6 @@ const cartSpec = {
   /* ── HEADER ──────────────────────────────────────────────── */
   header: {
 
-    order: ["TOP_BAR", "TIMER", "PROGRESS_BAR"],
-
     TOP_BAR: {
       enabled: true,
       props: {
@@ -32,6 +30,12 @@ const cartSpec = {
         showItemCount: true,
       },
     },
+  },
+
+  /* ── BODY ────────────────────────────────────────────────── */
+  body: {
+
+    order: ["TIMER", "PROGRESS_BAR", "PRODUCTS_IN_CART"],
 
     TIMER: {
       enabled: true,
@@ -71,12 +75,6 @@ const cartSpec = {
         bgColor: "#EDE4FA",
       },
     },
-  },
-
-  /* ── BODY ────────────────────────────────────────────────── */
-  body: {
-
-    order: ["PRODUCTS_IN_CART"],
 
     PRODUCTS_IN_CART: {
       enabled: true,
@@ -99,11 +97,21 @@ const cartSpec = {
   /* ── FOOTER ──────────────────────────────────────────────── */
   footer: {
 
-    order: ["DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"],
+    order: ["CHAT_LAUNCHER", "DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"],
 
     style: {
       bgColor: "#FFFFFF",
       verticalSpacing: 10,
+    },
+
+    CHAT_LAUNCHER: {
+      enabled: true,
+      props: {
+        title: "Chat with our AI stylist",
+        subtitle: "Get pairing ideas, size & order help",
+        avatarEmoji: "◆",
+      },
+      style: { bgColor: "#111111", textColor: "#FFFFFF", borderRadius: 14 },
     },
 
     DISCOUNT_CODE: {

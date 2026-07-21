@@ -22,9 +22,11 @@ import SubtotalBlock from "./SubtotalBlock/SubtotalBlock.jsx";
 import CheckoutButtonBlock from "./CheckoutButtonBlock/CheckoutButtonBlock.jsx";
 import TrustBadgesBlock from "./TrustBadgesBlock/TrustBadgesBlock.jsx";
 import PaymentMethodsBlock from "./PaymentMethodsBlock/PaymentMethodsBlock.jsx";
+import ChatLauncherBlock from "./ChatLauncherBlock/ChatLauncherBlock.jsx";
 import styles from "./FooterSection.module.css";
 
 const BLOCK_MAP = {
+  CHAT_LAUNCHER: ChatLauncherBlock,
   DISCOUNT_CODE: DiscountCodeBlock,
   ORDER_NOTES: OrderNotesBlock,
   SUBTOTAL: SubtotalBlock,
@@ -33,7 +35,7 @@ const BLOCK_MAP = {
   PAYMENT_METHODS: PaymentMethodsBlock,
 };
 
-const DEFAULT_ORDER = ["DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"];
+const DEFAULT_ORDER = ["CHAT_LAUNCHER", "DISCOUNT_CODE", "ORDER_NOTES", "SUBTOTAL", "CHECKOUT_BUTTON", "TRUST_BADGES", "PAYMENT_METHODS"];
 
 function SortableBlockWrapper({ id, children }) {
   const {

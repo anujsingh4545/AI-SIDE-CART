@@ -16,17 +16,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import TopBarBlock from "./TopBarBlock/TopBarBlock.jsx";
-import TimerBlock from "./TimerBlock/TimerBlock.jsx";
-import ProgressBarBlock from "./ProgressBarBlock/ProgressBarBlock.jsx";
 import styles from "./HeaderSection.module.css";
 
 const BLOCK_MAP = {
   TOP_BAR: TopBarBlock,
-  TIMER: TimerBlock,
-  PROGRESS_BAR: ProgressBarBlock,
 };
 
-const DEFAULT_ORDER = ["TOP_BAR", "TIMER", "PROGRESS_BAR"];
+const DEFAULT_ORDER = ["TOP_BAR"];
 
 function SortableBlockWrapper({ id, children }) {
   const {

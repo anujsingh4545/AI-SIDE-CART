@@ -8,7 +8,6 @@ export default function TopBarPreview({ data, general, itemCount }) {
   return (
     <div className={styles.wrap}>
       <span className={styles.title} style={{ color: textColor }}>{label}</span>
-      <button className={styles.close} style={{ color: textColor }} aria-label="Close">✕</button>
     </div>
   );
 }

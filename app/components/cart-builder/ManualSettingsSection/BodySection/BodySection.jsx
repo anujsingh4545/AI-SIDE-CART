@@ -15,14 +15,18 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import TimerBlock from "../HeaderSection/TimerBlock/TimerBlock.jsx";
+import ProgressBarBlock from "../HeaderSection/ProgressBarBlock/ProgressBarBlock.jsx";
 import ProductsInCartBlock from "./ProductsInCartBlock/ProductsInCartBlock.jsx";
 import styles from "./BodySection.module.css";
 
 const BLOCK_MAP = {
+  TIMER: TimerBlock,
+  PROGRESS_BAR: ProgressBarBlock,
   PRODUCTS_IN_CART: ProductsInCartBlock,
 };
 
-const DEFAULT_ORDER = ["PRODUCTS_IN_CART"];
+const DEFAULT_ORDER = ["TIMER", "PROGRESS_BAR", "PRODUCTS_IN_CART"];
 
 function SortableBlockWrapper({ id, children }) {
   const {
