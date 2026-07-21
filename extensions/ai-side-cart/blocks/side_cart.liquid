@@ -1,0 +1,80 @@
+{% comment %}
+  AI Side Cart — app embed block.
+  Loads the drawer widget (served from Shopify's CDN) on every storefront page,
+  points it at the app backend, and wires the theme's cart trigger to open it.
+  Enable under Theme editor > App embeds, then set the Backend URL to the app's
+  URL (the tunnel URL from `shopify app dev`, or the deployed app URL).
+{% endcomment %}
+
+<script src="{{ 'side-cart.js' | asset_url }}" defer></script>
+<script>
+  (function () {
+    function boot() {
+      if (!window.AISideCart) return;
+      var backend = {{ block.settings.backend_url | json }};
+      if (!backend) backend = "http://localhost:3000";
+      window.AISideCart.init({
+        backend: backend,
+        country: {{ block.settings.country | default: 'IN' | json }},
+        autoLauncher: {{ block.settings.show_launcher | json }},
+        // Take over the storefront: all add-to-cart actions feed our cart, and
+        // the theme's cart triggers open our drawer instead of the native cart.
+        takeover: {{ block.settings.replace_native_cart | default: true | json }},
+        // Inherit the store theme's fonts, colors, and button styling.
+        autoTheme: {{ block.settings.inherit_theme_style | default: true | json }},
+        cartSelectors: {{ block.settings.cart_selectors | json }}
+      });
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+    else boot();
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "AI Side Cart",
+  "target": "body",
+  "settings": [
+    {
+      "type": "url",
+      "id": "backend_url",
+      "label": "Backend URL",
+      "info": "The app URL that serves /api/chat and /api/cart. Use the tunnel URL from `shopify app dev`, or your deployed app URL."
+    },
+    {
+      "type": "text",
+      "id": "country",
+      "label": "Buyer country code",
+      "default": "IN",
+      "info": "ISO country code for pricing/currency (e.g. IN for India)."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_launcher",
+      "label": "Show floating launcher button",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "replace_native_cart",
+      "label": "Replace the store's cart",
+      "default": true,
+      "info": "Route every Add to cart action into the AI cart, and open the AI drawer instead of the theme's cart."
+    },
+    {
+      "type": "checkbox",
+      "id": "inherit_theme_style",
+      "label": "Match the store theme's style",
+      "default": true,
+      "info": "Inherit the theme's fonts, colors, and button styling so the drawer looks native."
+    },
+    {
+      "type": "text",
+      "id": "cart_selectors",
+      "label": "Cart trigger selectors",
+      "default": "a[href='/cart'], a[href$='/cart'], #cart-icon-bubble, .cart-count-bubble",
+      "info": "CSS selectors for the theme's cart button(s). Clicking them opens the AI drawer."
+    }
+  ]
+}
+{% endschema %}

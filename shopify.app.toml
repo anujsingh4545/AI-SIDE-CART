@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "438d3b4ab2c551997a27c36dcafb421d"
-application_url = "https://example.com"
+application_url = "https://reed-advert-nursing-available.trycloudflare.com"
 embedded = true
 name = "AI SIDE CART"
 
@@ -45,8 +45,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://reed-advert-nursing-available.trycloudflare.com/api/auth", "https://reed-advert-nursing-available.trycloudflare.com/auth/callback" ]
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true

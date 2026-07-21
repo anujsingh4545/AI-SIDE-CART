@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trailhead Outfitters — Demo Storefront</title>
+    <style>
+      :root { --ink:#1a1a2e; --muted:#6b7280; --line:#e6e6ef; --brand:#0f766e; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background:#fafafa; }
+      header { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:10; }
+      .logo { font-weight:800; font-size:20px; letter-spacing:-.02em; }
+      .logo span { color: var(--brand); }
+      nav { display:flex; gap:22px; color:var(--muted); font-size:14px; }
+      .cart-btn { display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:#fff; padding:9px 16px; border-radius:999px; cursor:pointer; font:inherit; font-weight:600; font-size:14px; }
+      .hero { padding:64px 28px; text-align:center; background:linear-gradient(160deg,#ecfdf5,#f0fdfa); border-bottom:1px solid var(--line); }
+      .hero h1 { font-size:40px; margin:0 0 12px; letter-spacing:-.03em; }
+      .hero p { color:var(--muted); font-size:17px; max-width:560px; margin:0 auto 24px; line-height:1.5; }
+      .hero .cta { background:var(--brand); color:#fff; border:none; padding:14px 26px; border-radius:999px; font:inherit; font-weight:700; font-size:15px; cursor:pointer; }
+      .grid { max-width:1080px; margin:48px auto; padding:0 28px; display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:22px; }
+      .tile { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+      .tile img { width:100%; height:180px; object-fit:cover; display:block; background:#eee; }
+      .tile .t { padding:12px 14px; }
+      .tile h3 { font-size:15px; margin:0 0 4px; }
+      .tile .p { color:var(--muted); font-size:14px; }
+      .banner { text-align:center; padding:10px; background:var(--brand); color:#fff; font-size:13px; font-weight:600; }
+      footer { text-align:center; color:var(--muted); font-size:13px; padding:40px; }
+      .tag { display:inline-block; margin-top:14px; font-size:12px; color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:999px; padding:5px 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="banner">🎉 Monsoon Sale — 20% off orders over ₹1,500 with code MONSOON20</div>
+    <header>
+      <div class="logo">Trailhead<span>·</span>Outfitters</div>
+      <nav><a>Hiking</a><a>Footwear</a><a>Apparel</a><a>Accessories</a></nav>
+      <button class="cart-btn" id="openCart">🛒 Cart</button>
+    </header>
+
+    <section class="hero">
+      <h1>Gear up for the trail.</h1>
+      <p>Not sure what you need? Ask our AI assistant — describe your trip and it'll build your kit in seconds.</p>
+      <button class="cta" id="askAi">✨ Ask the AI assistant</button>
+      <div class="tag">Demo storefront · powered by AI Side Cart</div>
+    </section>
+
+    <div class="grid" id="grid"></div>
+    <footer>Demo storefront for the AI Side Cart drawer. Products & checkout are real (Shopify dev store).</footer>
+
+    <!-- The drawer widget -->
+    <script src="/side-cart.js"></script>
+    <script>
+      // Same-origin backend (this app serves /api/chat and /api/cart).
+      const qs = new URLSearchParams(location.search);
+      // Demo-only: build a cart via the API then open on the Cart tab (for previews).
+      if (qs.has("cartseed")) {
+        (async () => {
+          const add = (b) => fetch("/api/cart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
+          let r = await add({ action: "add", variantId: "gid://shopify/ProductVariant/51999309660481" }); // Trailblazer UK 9
+          const cid = r.cart.id;
+          await add({ action: "add", cartId: cid, variantId: "gid://shopify/ProductVariant/51999289246017" }); // Sweatshirt M
+          await add({ action: "discount", cartId: cid, codes: ["MONSOON20"] });
+          AISideCart.init({ backend: "", country: "IN", autoLauncher: true, open: true, view: "cart", cartId: cid });
+        })();
+      } else {
+        AISideCart.init({ backend: "", country: "IN", autoLauncher: true, open: qs.has("open") || qs.has("ask") });
+        document.getElementById("openCart").addEventListener("click", AISideCart.open);
+        document.getElementById("askAi").addEventListener("click", AISideCart.open);
+        if (qs.get("ask")) setTimeout(() => AISideCart.ask(qs.get("ask")), 300);
+      }
+
+      // A little visual context: show real products on the page (direct search, no LLM).
+      Promise.all([
+        fetch("/api/search?q=hiking&limit=6").then((r) => r.json()),
+        fetch("/api/search?q=footwear&limit=3").then((r) => r.json()),
+        fetch("/api/search?q=apparel&limit=3").then((r) => r.json()),
+      ])
+        .then((sets) => {
+          const seen = new Set();
+          const products = [];
+          sets.forEach((d) => (d.products || []).forEach((p) => { if (!seen.has(p.id)) { seen.add(p.id); products.push(p); } }));
+          const grid = document.getElementById("grid");
+          products.slice(0, 12).forEach((p) => {
+            const el = document.createElement("div");
+            el.className = "tile";
+            el.innerHTML =
+              (p.image ? '<img src="' + p.image + '" alt="">' : "<div style='height:180px;background:#eee'></div>") +
+              '<div class="t"><h3>' + p.title + "</h3><div class='p'>₹" + (p.price ? p.price.amount : "") + "</div></div>";
+            grid.appendChild(el);
+          });
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>

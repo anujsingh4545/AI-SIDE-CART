@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem -Path \"d:\\\\skailama\\\\ai-side-cart\\\\app\" -Recurse -Force | Select-Object FullName, PSIsContainer | Sort-Object FullName | ForEach-Object { $_.FullName })"
-    ]
-  }
-}
